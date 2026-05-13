@@ -71,7 +71,7 @@ App runs on `http://localhost:5173`
 
 ### Frontend (.env)
 - `VITE_CLERK_PUBLISHABLE_KEY` — Clerk publishable key
-- `VITE_API_URL` — Backend API URL (default: http://localhost:5000)
+- `VITE_API_URL` — Backend API URL (default: http://localhost:3000)
 
 ## Project Structure
 
