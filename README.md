@@ -19,7 +19,7 @@ Built for the **MUT Capstone Project** integrating DS3, IS3, and IP2 modules.
 - Clerk (JWT validation)
 - Groq AI (laundry time suggestions)
 - SendGrid (email notifications)
-- Vonage SMS (SMS notifications)
+
 
 ### Infrastructure
 - Supabase (hosted PostgreSQL + auth)
