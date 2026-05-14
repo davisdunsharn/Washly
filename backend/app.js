@@ -17,16 +17,24 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Error handling
+// routes
+const usersRouter = require('./routes/users');
+const machinesRouter = require('./routes/machines');
+const bookingsRouter = require('./routes/bookings');
+
+app.use('/api/users', usersRouter);
+app.use('/api/machines', machinesRouter);
+app.use('/api/bookings', bookingsRouter);
+
+// error handler
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('Error:', err.stack);
   res.status(err.status || 500).json({
-    error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message
+    error: process.env.NODE_ENV === 'production' ? 'Something broke' : err.message
   });
 });
 
-// Start server
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Washly backend running on http://localhost:${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV}`);

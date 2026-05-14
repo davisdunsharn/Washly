@@ -1,9 +1,34 @@
-import { useUser } from '@clerk/clerk-react'
+import { useEffect } from 'react'
+import { useUser, useAuth } from '@clerk/clerk-react'
 
 export default function DashboardPage() {
   const { user } = useUser()
+  const { getToken } = useAuth()
   const rawName = user?.username || user?.firstName || user?.fullName || 'there'
   const displayName = rawName.charAt(0).toUpperCase() + rawName.slice(1)
+
+  useEffect(() => {
+    const syncUserToDatabase = async () => {
+      try {
+        const clerkToken = await getToken()
+        const response = await fetch('http://localhost:3000/api/users/sync', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${clerkToken}`,
+            'Content-Type': 'application/json'
+          }
+        })
+        const data = await response.json()
+        console.log('User synced:', data)
+      } catch (error) {
+        console.error('Failed to sync user:', error)
+      }
+    }
+
+    if (user) {
+      syncUserToDatabase()
+    }
+  }, [user, getToken])
 
   return (
     <div className="min-h-screen bg-slate-50">
