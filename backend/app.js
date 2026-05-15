@@ -1,32 +1,30 @@
-// app.js — Express server entry point
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
 
-// Middleware
+// CORS - allow your frontend on port 5175
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: 'http://localhost:5175',
   credentials: true
 }));
 app.use(express.json());
 
-// Routes
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// routes
 const usersRouter = require('./routes/users');
 const machinesRouter = require('./routes/machines');
 const bookingsRouter = require('./routes/bookings');
+const chatRouter = require('./routes/chat');   // <-- ADD THIS
 
 app.use('/api/users', usersRouter);
 app.use('/api/machines', machinesRouter);
 app.use('/api/bookings', bookingsRouter);
+app.use('/api/chat', chatRouter);              // <-- ADD THIS
 
-// error handler
 app.use((err, req, res, next) => {
   console.error('Error:', err.stack);
   res.status(err.status || 500).json({

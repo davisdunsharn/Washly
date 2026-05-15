@@ -1,82 +1,149 @@
 import { useState, useRef, useEffect } from 'react'
-import { useUser } from '@clerk/clerk-react'
+import { useUser, useAuth } from '@clerk/clerk-react'
 
-const SYSTEM_PROMPT = `You are Washly Assistant, a helpful AI embedded in the Washly smart laundry booking app used by university residence students. 
+// ---------- Pre‑written answers for chips (no AI) ----------
+const CHIP_ANSWERS = {
+  'available': '✅ Available machines right now: Machine 1 (Ground Floor), Machine 4 (First Floor East), Machine 6 (First Floor West), Machine 7 (Second Floor Central), Machine 8 (Second Floor Central). Machine 2 is in use, Machine 5 under maintenance.',
+  'my_booking': '❌ You have no active bookings. Go to Dashboard, find an available machine, and tap “Book Now” to start a cycle.',
+  'cycle_length': '⏱️ A full cycle takes 45 minutes: Washing (0‑40%), Rinsing (41‑65%), Spinning (66‑85%), Drying (86‑100%).',
+  'how_to_book': '📖 1) Dashboard → 2) Pick available machine → 3) Tap “Book Now” → 4) Choose time → 5) Confirm. You’ll get a notification when done.',
+  'machine5': '🔧 Machine 5 is in maintenance (drum sensor replacement). Expected back tomorrow.',
+  'emergency': '📞 Emergency support: +27 31 907 7111 (Mon‑Fri 8am‑6pm). For urgent issues, also contact your residence advisor.'
+}
 
-The app manages All-in-One Commercial Single Drum Units that go through 4 phases per 45-minute cycle:
-- Washing (0–40%): drum rotates with detergent and water
-- Rinsing (41–65%): flushes out soap and residue
-- Spinning (66–85%): high-speed water extraction
-- Drying (86–100%): warm air drying cycle
+// System prompt for Groq (used only for free‑text typed questions)
+const SYSTEM_PROMPT = `You are Washly Assistant, an AI for a university laundry booking app called Washly.  
+You help students with:  
+- Checking machine availability (mock data: Machine 1,4,6,7,8 available; Machine 2 running Washing 28%; Machine 3 running Rinsing 55%; Machine 5 maintenance)  
+- Booking or cancelling laundry slots  
+- Understanding wash phases (Washing 0-40%, Rinsing 41-65%, Spinning 66-85%, Drying 86-100%)  
+- Troubleshooting (e.g., "machine not starting")  
 
-Current mock machine status:
-- Washer A1 (Block A): Available
-- Washer A2 (Block A): Running – Washing phase (28%, 22 min left)
-- Washer A3 (Block A): Available
-- Washer B1 (Block B): Running – Rinsing phase (55%, 12 min left)
-- Washer B2 (Block B): Running – Spinning phase (78%, 5 min left)
-- Washer B3 (Block B): Available
-- Washer C1 (Block C): Maintenance (out of service)
-- Washer C2 (Block C): Available
-- Washer C3 (Block C): Running – Drying phase (92%, 2 min left)
-
-Help students with: checking machine availability, booking guidance, cycle phase questions, troubleshooting, and general laundry tips.
-Keep responses short, friendly, and practical. Use emojis sparingly. Never make up booking confirmation numbers.`
+You MUST refuse to answer anything unrelated to laundry, booking, or Washly.  
+If asked about anything else, reply: "I'm here only for laundry & Washly questions. Please use the chips below or ask about machine status, booking, or cycle phases."  
+Keep answers short, friendly, and practical. Use emojis sparingly.`
 
 export default function Chatbot() {
   const { user } = useUser()
+  const { getToken } = useAuth()
   const [open, setOpen] = useState(false)
-  const [messages, setMessages] = useState([
-    { role: 'assistant', content: `Hey ${user?.firstName || 'there'}! 👋 I'm your Washly assistant. Ask me about machine availability, your cycle status, or anything laundry-related!` }
-  ])
+  const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [unread, setUnread] = useState(0)
+  const [sessionActive, setSessionActive] = useState(true)
+  const [lastAIMessageId, setLastAIMessageId] = useState(null) // for feedback
   const bottomRef = useRef(null)
-  const inputRef  = useRef(null)
+  const inputRef = useRef(null)
+  let timeoutId = useRef(null)
 
+  // Session timeout: 5 minutes of inactivity
+  const resetTimeout = () => {
+    if (timeoutId.current) clearTimeout(timeoutId.current)
+    timeoutId.current = setTimeout(() => {
+      if (open && sessionActive) {
+        setMessages(prev => [...prev, { role: 'assistant', content: '⏰ Session timed out due to inactivity. Please close and reopen the chat to start again.', id: Date.now() }])
+        setSessionActive(false)
+      }
+    }, 5 * 60 * 1000)
+  }
+
+  // Initial greeting when chat opens
   useEffect(() => {
-    if (open) { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); setUnread(0) }
+    if (open && messages.length === 0) {
+      const greeting = `Hey ${user?.firstName || 'there'}! 👋 I'm your Washly assistant.\n\nTap a chip below or type your question.`
+      setMessages([{ role: 'assistant', content: greeting, id: Date.now() }])
+      setSessionActive(true)
+      resetTimeout()
+    }
+  }, [open, user])
+
+  // Auto‑scroll and unread counter
+  useEffect(() => {
+    if (open) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+      if (messages.length > 0 && messages[messages.length-1].role === 'assistant') {
+        setUnread(0)
+      }
+    }
   }, [messages, open])
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 100)
   }, [open])
 
-  const send = async () => {
-    const text = input.trim()
-    if (!text || loading) return
+  // Send a message (chip or typed)
+  const sendMessage = async (text, isChip = false) => {
+    const message = text?.trim()
+    if (!message || loading || !sessionActive) return
     setInput('')
+    resetTimeout()
 
-    const userMsg = { role: 'user', content: text }
-    const next = [...messages, userMsg]
-    setMessages(next)
+    // Add user message
+    const userMsg = { role: 'user', content: message, id: Date.now() }
+    setMessages(prev => [...prev, userMsg])
+
+    // Handle chip answers (pre‑written, no AI)
+    if (isChip && CHIP_ANSWERS[message]) {
+      const botMsg = { role: 'assistant', content: CHIP_ANSWERS[message], id: Date.now() + 1 }
+      setMessages(prev => [...prev, botMsg])
+      setLastAIMessageId(null) // chips don't need feedback
+      return
+    }
+
+    // Otherwise, call Groq for free‑text question
     setLoading(true)
-
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const token = await getToken()
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+      const res = await fetch(`${apiUrl}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          system: SYSTEM_PROMPT,
-          messages: next.map(m => ({ role: m.role, content: m.content })),
-        }),
+          message: message,
+          systemPrompt: SYSTEM_PROMPT,
+          conversationHistory: messages.concat(userMsg).map(m => ({ role: m.role, content: m.content }))
+        })
       })
       const data = await res.json()
-      const reply = data.content?.map(c => c.text || '').join('') || 'Sorry, I had trouble responding. Try again!'
-      const botMsg = { role: 'assistant', content: reply }
-      setMessages(prev => [...prev, botMsg])
-      if (!open) setUnread(u => u + 1)
-    } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Oops! Connection issue. Please try again.' }])
+      if (res.ok) {
+        const reply = data.reply || 'Sorry, I could not respond.'
+        const botMsg = { role: 'assistant', content: reply, id: Date.now() + 1, awaitingFeedback: true }
+        setMessages(prev => [...prev, botMsg])
+        setLastAIMessageId(botMsg.id)
+      } else {
+        throw new Error(data.error || 'Request failed')
+      }
+    } catch (err) {
+      console.error('Chat error:', err)
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Connection issue. Please try again or use the chips.', id: Date.now() + 1 }])
     } finally {
       setLoading(false)
     }
   }
 
-  const quickReplies = ['Which machines are available?', 'What phase is Washer A2 on?', 'How long is a full cycle?', 'How do I book a machine?']
+  // Feedback handler (thumbs up/down)
+  const giveFeedback = (messageId, isPositive) => {
+    setMessages(prev => prev.map(msg => 
+      msg.id === messageId ? { ...msg, feedback: isPositive ? '👍' : '👎', awaitingFeedback: false } : msg
+    ))
+    // In a real app you could send this feedback to a backend endpoint
+    console.log(`Feedback for message ${messageId}: ${isPositive ? 'positive' : 'negative'}`)
+    setLastAIMessageId(null)
+  }
+
+  // Chips definitions – each chip sends a specific key that maps to CHIP_ANSWERS
+  const chips = [
+    { label: '📋 Available machines', key: 'available' },
+    { label: '📌 My booked machine', key: 'my_booking' },
+    { label: '⏱️ Cycle length', key: 'cycle_length' },
+    { label: '📖 How to book', key: 'how_to_book' },
+    { label: '🔧 Machine 5 status', key: 'machine5' },
+    { label: '📞 Emergency', key: 'emergency' }
+  ]
 
   return (
     <>
@@ -84,7 +151,6 @@ export default function Chatbot() {
       <button
         onClick={() => setOpen(o => !o)}
         className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-[#0ABAB5] text-white shadow-2xl shadow-[#0ABAB5]/40 flex items-center justify-center hover:bg-[#09A8A3] transition-all hover:scale-105"
-        style={{ boxShadow: '0 8px 32px rgba(10,186,181,0.4)' }}
       >
         {open ? (
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
@@ -96,19 +162,14 @@ export default function Chatbot() {
               <circle cx="11" cy="9" r="1" fill="#0ABAB5"/>
               <circle cx="14" cy="9" r="1" fill="#0ABAB5"/>
             </svg>
-            {unread > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-bold">{unread}</span>
-            )}
+            {unread > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-bold">{unread}</span>}
           </>
         )}
       </button>
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 w-80 sm:w-96 flex flex-col bg-white rounded-2xl shadow-2xl border border-[#E2EEED] overflow-hidden"
-          style={{ height: '480px', animation: 'slideUp 0.2s ease-out' }}>
-          <style>{`@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}`}</style>
-
+        <div className="fixed bottom-24 right-6 z-50 w-80 sm:w-96 flex flex-col bg-white rounded-2xl shadow-2xl border border-[#E2EEED] overflow-hidden" style={{ height: '540px' }}>
           {/* Header */}
           <div className="bg-gradient-to-r from-[#0D1B2A] to-[#1E3448] px-4 py-3 flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#0ABAB5] flex items-center justify-center shrink-0">
@@ -130,19 +191,24 @@ export default function Chatbot() {
             <button onClick={() => setOpen(false)} className="text-white/40 hover:text-white/70 transition-colors text-lg leading-none">✕</button>
           </div>
 
-          {/* Messages */}
+          {/* Messages area */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#F8FAFA]">
-            {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                {m.role === 'assistant' && (
-                  <div className="w-7 h-7 rounded-full bg-[#0ABAB5] flex items-center justify-center text-white text-xs shrink-0 mr-2 mt-0.5">W</div>
-                )}
-                <div className={`max-w-[78%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                  m.role === 'user'
+            {messages.map((msg) => (
+              <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                {msg.role === 'assistant' && <div className="w-7 h-7 rounded-full bg-[#0ABAB5] flex items-center justify-center text-white text-xs shrink-0 mr-2 mt-0.5">W</div>}
+                <div className={`max-w-[78%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                  msg.role === 'user'
                     ? 'bg-[#0ABAB5] text-white rounded-tr-sm'
                     : 'bg-white text-[#1E3448] rounded-tl-sm border border-[#E2EEED] shadow-sm'
                 }`}>
-                  {m.content}
+                  {msg.content}
+                  {msg.awaitingFeedback && (
+                    <div className="flex gap-2 mt-2 pt-1 border-t border-[#E2EEED]/50">
+                      <button onClick={() => giveFeedback(msg.id, true)} className="text-xs text-green-600 hover:text-green-800">👍 Helpful</button>
+                      <button onClick={() => giveFeedback(msg.id, false)} className="text-xs text-red-500 hover:text-red-700">👎 Not helpful</button>
+                    </div>
+                  )}
+                  {msg.feedback && <div className="text-right text-[10px] text-gray-400 mt-1">Feedback: {msg.feedback}</div>}
                 </div>
               </div>
             ))}
@@ -150,38 +216,39 @@ export default function Chatbot() {
               <div className="flex justify-start">
                 <div className="w-7 h-7 rounded-full bg-[#0ABAB5] flex items-center justify-center text-white text-xs shrink-0 mr-2 mt-0.5">W</div>
                 <div className="bg-white border border-[#E2EEED] rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm flex gap-1 items-center">
-                  {[0,1,2].map(i => (
-                    <span key={i} className="w-1.5 h-1.5 rounded-full bg-[#0ABAB5] animate-bounce" style={{ animationDelay: `${i*0.15}s` }}/>
-                  ))}
+                  {[0,1,2].map(i => <span key={i} className="w-1.5 h-1.5 rounded-full bg-[#0ABAB5] animate-bounce" style={{ animationDelay: `${i*0.15}s` }}/>)}
                 </div>
               </div>
             )}
             <div ref={bottomRef}/>
           </div>
 
-          {/* Quick replies — only show at start */}
-          {messages.length <= 1 && (
-            <div className="px-3 py-2 flex gap-1.5 flex-wrap border-t border-[#F0F7F7]">
-              {quickReplies.map(q => (
-                <button key={q} onClick={() => { setInput(q); setTimeout(send, 0) }}
-                  className="text-xs text-[#0ABAB5] border border-[#0ABAB5]/30 bg-[#E0FAF9] px-2.5 py-1 rounded-full hover:bg-[#0ABAB5] hover:text-white transition-all">
-                  {q}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Sticky chip bar (scrollable) */}
+          <div className="px-3 py-2 flex gap-2 overflow-x-auto border-t border-[#E2EEED] bg-white sticky bottom-0">
+            {chips.map((chip) => (
+              <button
+                key={chip.key}
+                onClick={() => sendMessage(chip.key, true)}
+                disabled={!sessionActive || loading}
+                className="flex-shrink-0 text-xs text-[#0ABAB5] border border-[#0ABAB5]/30 bg-[#E0FAF9] px-3 py-1.5 rounded-full hover:bg-[#0ABAB5] hover:text-white transition-all disabled:opacity-40"
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
 
-          {/* Input */}
+          {/* Input area (disabled if session expired) */}
           <div className="flex items-center gap-2 px-3 py-3 border-t border-[#E2EEED] bg-white">
             <input
               ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
-              placeholder="Ask about machines, bookings…"
+              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage(input, false)}
+              placeholder={sessionActive ? "Type your question..." : "Session expired. Close and reopen."}
               className="flex-1 text-sm text-[#1E3448] placeholder-[#B0C4C4] bg-[#F0F7F7] rounded-xl px-3.5 py-2.5 outline-none focus:ring-2 focus:ring-[#0ABAB5]/25 border border-transparent focus:border-[#0ABAB5]/30"
+              disabled={!sessionActive}
             />
-            <button onClick={send} disabled={!input.trim() || loading}
+            <button onClick={() => sendMessage(input, false)} disabled={!input.trim() || loading || !sessionActive}
               className="w-9 h-9 rounded-xl bg-[#0ABAB5] text-white flex items-center justify-center hover:bg-[#09A8A3] disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-5-5 12-2-4-5-3z" fill="white"/></svg>
             </button>
