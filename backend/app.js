@@ -4,9 +4,15 @@ require('dotenv').config();
 
 const app = express();
 
-// CORS - allow your frontend on port 5175
+// CORS - allow your frontend on any localhost port
 app.use(cors({
-  origin: 'http://localhost:5175',
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, etc.)
+    if (!origin) return callback(null, true);
+    // Allow localhost on any port
+    if (origin.startsWith('http://localhost:')) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 app.use(express.json());
