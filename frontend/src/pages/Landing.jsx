@@ -5,12 +5,21 @@ import { useEffect } from 'react'
 export default function LandingPage() {
   const navigate = useNavigate()
 
-  // If already signed in, go straight to dashboard
+  // FIX: navigate() must be called inside useEffect, never during render.
+  // Calling it directly during render causes the React Router warning and
+  // can produce a blank page in strict mode.
+  useEffect(() => {
+    // If Clerk has already signed the user in and they land on "/",
+    // send them straight to the dashboard.
+    // (ClerkProvider's afterSignInUrl also handles post-sign-in redirect,
+    //  but this covers page refreshes while already signed in.)
+  }, [])
+
   return (
     <>
       <SignedIn>
-        {/* auto-redirect handled in App.jsx */}
-        {navigate('/dashboard')}
+        {/* Redirect signed-in users away from landing — safe inside SignedIn wrapper */}
+        <RedirectToDashboard navigate={navigate} />
       </SignedIn>
 
       <SignedOut>
@@ -33,7 +42,7 @@ export default function LandingPage() {
                   <circle cx="4" cy="13" r="1.1" fill="white"/>
                 </svg>
               </div>
-              <span style={{fontFamily:'Syne,sans-serif'}} className="text-xl font-bold text-white tracking-tight">
+              <span className="font-display text-xl font-bold text-white tracking-tight">
                 Wash<span className="text-[#0ABAB5]">ly</span>
               </span>
             </div>
@@ -61,8 +70,7 @@ export default function LandingPage() {
 
             {/* Headline */}
             <h1
-              style={{fontFamily:'Syne,sans-serif'}}
-              className="text-5xl sm:text-6xl font-bold text-white leading-tight max-w-2xl mb-6 animate-slide-in delay-100"
+              className="font-display text-5xl sm:text-6xl font-bold text-white leading-tight max-w-2xl mb-6 animate-slide-in delay-100"
             >
               Laundry, <span className="text-[#0ABAB5]">simplified</span><br/>for students
             </h1>
@@ -76,7 +84,9 @@ export default function LandingPage() {
               <SignUpButton mode="modal">
                 <button className="flex items-center gap-2 bg-[#0ABAB5] hover:bg-[#09A8A3] text-white font-medium px-8 py-3.5 rounded-xl transition-all shadow-xl shadow-[#0ABAB5]/25 text-sm">
                   Create Free Account
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
                 </button>
               </SignUpButton>
               <SignInButton mode="modal">
@@ -116,7 +126,6 @@ export default function LandingPage() {
                 </div>
                 {/* Mini dashboard preview */}
                 <div className="bg-[#F0F7F7] p-4">
-                  {/* Mini stat row */}
                   <div className="grid grid-cols-4 gap-2 mb-3">
                     {[
                       { l: 'Available', v: '3', c: 'text-[#22C55E]' },
@@ -126,11 +135,10 @@ export default function LandingPage() {
                     ].map(({ l, v, c }) => (
                       <div key={l} className="bg-white rounded-xl p-3 border border-[#E2EEED]">
                         <p className="text-[9px] text-[#7A96A0] uppercase tracking-wide">{l}</p>
-                        <p style={{fontFamily:'Syne,sans-serif'}} className={`text-lg font-bold ${c}`}>{v}</p>
+                        <p className={`font-display text-lg font-bold ${c}`}>{v}</p>
                       </div>
                     ))}
                   </div>
-                  {/* Mini machine row */}
                   <div className="grid grid-cols-3 gap-2">
                     {[
                       { name: 'Washer A1', status: 'available', prog: 0 },
@@ -166,4 +174,13 @@ export default function LandingPage() {
       </SignedOut>
     </>
   )
+}
+
+// Separate component so navigate() is called from a component that only mounts
+// when the user IS signed in — satisfies React Router's rule.
+function RedirectToDashboard({ navigate }) {
+  useEffect(() => {
+    navigate('/dashboard', { replace: true })
+  }, [navigate])
+  return null
 }

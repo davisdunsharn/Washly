@@ -1,13 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useUser } from '@clerk/clerk-react'
 
 const ALL_BOOKINGS = [
-  { id: 'WL-2841', machine: 'Washer A2', block: 'Block A', date: '2026-05-14', time: '11:00 AM', status: 'active',    duration: 45, ref: 'Cycle in progress – Washing phase' },
-  { id: 'WL-2840', machine: 'Washer B1', block: 'Block B', date: '2026-05-14', time: '09:30 AM', status: 'complete',  duration: 45, ref: 'Completed successfully' },
-  { id: 'WL-2839', machine: 'Washer C2', block: 'Block C', date: '2026-05-15', time: '08:00 AM', status: 'upcoming',  duration: 45, ref: 'Scheduled for tomorrow' },
-  { id: 'WL-2821', machine: 'Washer A1', block: 'Block A', date: '2026-05-13', time: '03:00 PM', status: 'complete',  duration: 45, ref: 'Completed successfully' },
-  { id: 'WL-2810', machine: 'Washer B3', block: 'Block B', date: '2026-05-12', time: '10:00 AM', status: 'cancelled', duration: 45, ref: 'Cancelled by user' },
-  { id: 'WL-2799', machine: 'Washer A3', block: 'Block A', date: '2026-05-11', time: '07:00 AM', status: 'complete',  duration: 45, ref: 'Completed successfully' },
+  { id: 'WL-2841', user: 'Amina Patel', userEmail: 'amina@washly.test', machine: 'Washer A2', block: 'Block A', date: '2026-05-14', time: '11:00 AM', status: 'active',    duration: 45, ref: 'Cycle in progress – Washing phase' },
+  { id: 'WL-2840', user: 'James Reed',  userEmail: 'james@washly.test',  machine: 'Washer B1', block: 'Block B', date: '2026-05-14', time: '09:30 AM', status: 'complete',  duration: 45, ref: 'Completed successfully' },
+  { id: 'WL-2839', user: 'Amina Patel', userEmail: 'amina@washly.test', machine: 'Washer C2', block: 'Block C', date: '2026-05-15', time: '08:00 AM', status: 'upcoming',  duration: 45, ref: 'Scheduled for tomorrow' },
+  { id: 'WL-2821', user: 'James Reed',  userEmail: 'james@washly.test',  machine: 'Washer A1', block: 'Block A', date: '2026-05-13', time: '03:00 PM', status: 'complete',  duration: 45, ref: 'Completed successfully' },
+  { id: 'WL-2810', user: 'Amina Patel', userEmail: 'amina@washly.test', machine: 'Washer B3', block: 'Block B', date: '2026-05-12', time: '10:00 AM', status: 'cancelled', duration: 45, ref: 'Cancelled by user' },
+  { id: 'WL-2799', user: 'James Reed',  userEmail: 'james@washly.test',  machine: 'Washer A3', block: 'Block A', date: '2026-05-11', time: '07:00 AM', status: 'complete',  duration: 45, ref: 'Completed successfully' },
 ]
 
 const statusConfig = {
@@ -24,9 +24,19 @@ export default function BookingsPage() {
   const [filter, setFilter] = useState('all')
   const [showNew, setShowNew] = useState(false)
   const [form, setForm] = useState({ machine: '', date: '', time: '08:00' })
-  const [bookings, setBookings] = useState(ALL_BOOKINGS)
+  const [bookings, setBookings] = useState([])
   const [toast, setToast] = useState(null)
   const [cancelId, setCancelId] = useState(null)
+
+  const currentEmail = user?.primaryEmailAddress?.emailAddress
+    || user?.emailAddresses?.[0]?.emailAddress
+    || user?.emailAddress
+    || ''
+
+  useEffect(() => {
+    if (!currentEmail) return
+    setBookings(ALL_BOOKINGS.filter(b => b.userEmail === currentEmail))
+  }, [currentEmail])
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
@@ -36,8 +46,15 @@ export default function BookingsPage() {
     if (!form.machine || !form.date) return
     const newB = {
       id: `WL-${Math.floor(2842 + Math.random() * 100)}`,
-      machine: form.machine, block: form.machine.includes('A') ? 'Block A' : form.machine.includes('B') ? 'Block B' : 'Block C',
-      date: form.date, time: form.time, status: 'upcoming', duration: 45, ref: 'Booking confirmed'
+      user: user?.fullName || 'You',
+      userEmail: currentEmail,
+      machine: form.machine,
+      block: form.machine.includes('A') ? 'Block A' : form.machine.includes('B') ? 'Block B' : 'Block C',
+      date: form.date,
+      time: form.time,
+      status: 'upcoming',
+      duration: 45,
+      ref: 'Booking confirmed',
     }
     setBookings(prev => [newB, ...prev])
     setShowNew(false)

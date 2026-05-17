@@ -17,6 +17,24 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'Washly Backend API',
+    version: '4.1.1',
+    endpoints: {
+      health: '/api/health',
+      users: '/api/users',
+      machines: '/api/machines',
+      bookings: '/api/bookings',
+      chat: '/api/chat',
+      sensors: '/api/sensors',
+      ai: '/api/ai',
+      notify: '/api/notify'
+    }
+  });
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -24,12 +42,18 @@ app.get('/api/health', (req, res) => {
 const usersRouter = require('./routes/users');
 const machinesRouter = require('./routes/machines');
 const bookingsRouter = require('./routes/bookings');
-const chatRouter = require('./routes/chat');   // <-- ADD THIS
+const chatRouter = require('./routes/chat');
+const sensorsRouter = require('./routes/sensors');
+const aiRouter = require('./routes/ai');
+const notifyRouter = require('./routes/notify');
 
 app.use('/api/users', usersRouter);
 app.use('/api/machines', machinesRouter);
 app.use('/api/bookings', bookingsRouter);
-app.use('/api/chat', chatRouter);              // <-- ADD THIS
+app.use('/api/chat', chatRouter);
+app.use('/api/sensors', sensorsRouter);
+app.use('/api/ai', aiRouter);
+app.use('/api/notify', notifyRouter);
 
 app.use((err, req, res, next) => {
   console.error('Error:', err.stack);

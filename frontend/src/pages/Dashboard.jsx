@@ -1,11 +1,12 @@
 import { useUser, useAuth } from '@clerk/clerk-react'
 import { useState, useEffect } from 'react'
+import { mockMachines, CYCLE_TYPES } from '../mock/data.js'
 
-/* ─── Cycle phases for All-in-One Commercial Drum Unit ─── */
+/* ─── Cycle phases ─── */
 const CYCLE_PHASES = [
-  { label: 'Washing',  from: 0,  to: 40, color: '#0ABAB5', icon: '🫧', desc: 'Drum rotating with detergent' },
-  { label: 'Rinsing',  from: 41, to: 65, color: '#378ADD', icon: '💧', desc: 'Flushing out soap & residue'  },
-  { label: 'Spinning', from: 66, to: 85, color: '#8B5CF6', icon: '🌀', desc: 'High-speed water extraction'  },
+  { label: 'Washing',  from: 0,  to: 40,  color: '#0ABAB5', icon: '🫧', desc: 'Drum rotating with detergent' },
+  { label: 'Rinsing',  from: 41, to: 65,  color: '#378ADD', icon: '💧', desc: 'Flushing out soap & residue'  },
+  { label: 'Spinning', from: 66, to: 85,  color: '#8B5CF6', icon: '🌀', desc: 'High-speed water extraction'  },
   { label: 'Drying',   from: 86, to: 100, color: '#F59E0B', icon: '♨️', desc: 'Warm air drying cycle'       },
 ]
 
@@ -13,7 +14,6 @@ function getPhase(progress) {
   return CYCLE_PHASES.find(p => progress >= p.from && progress <= p.to) || CYCLE_PHASES[0]
 }
 
-/* ─── Status config ─── */
 const statusStyles = {
   available:   { dot: 'bg-[#22C55E]', badge: 'bg-green-50 text-green-700',   label: 'Available'   },
   running:     { dot: 'bg-[#0ABAB5]', badge: 'bg-teal-50 text-teal-700',     label: 'Running'     },
@@ -26,9 +26,9 @@ const bookingStyles = {
   upcoming: 'bg-blue-50 text-blue-700',
 }
 
-/* ─── Drum SVG (unchanged) ─── */
+/* ─── Drum SVG ─── */
 function DrumIcon({ phase, isRunning, size = 40 }) {
-  const color = phase?.color || 'currentColor'
+  const color = phase?.color || '#0ABAB5'
   const spinClass = isRunning ? (phase?.label === 'Spinning' ? 'animate-spin' : 'animate-spin-slow') : ''
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none" className={spinClass}
@@ -43,7 +43,7 @@ function DrumIcon({ phase, isRunning, size = 40 }) {
   )
 }
 
-/* ─── Phase stepper dots (unchanged) ─── */
+/* ─── Phase stepper ─── */
 function PhaseSteps({ progress }) {
   return (
     <div className="flex items-center justify-between gap-1 mb-3">
@@ -63,7 +63,7 @@ function PhaseSteps({ progress }) {
   )
 }
 
-/* ─── Machine Card (unchanged except status mapping) ─── */
+/* ─── Machine Card ─── */
 function MachineCard({ machine, onBook, delay }) {
   const displayStatus = machine.status === 'in_use' ? 'running' : machine.status
   const s = statusStyles[displayStatus] || statusStyles.maintenance
@@ -75,7 +75,7 @@ function MachineCard({ machine, onBook, delay }) {
       <div className="flex items-start justify-between mb-3">
         <div>
           <p className="font-display font-600 text-[#1E3448] text-sm">{machine.name}</p>
-          <p className="text-xs text-[#7A96A0] mt-0.5">{machine.room}</p>
+          <p className="text-xs text-[#7A96A0] mt-0.5">{machine.room || machine.location}</p>
         </div>
         <span className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${s.badge}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${s.dot} ${isRun ? 'animate-pulse' : ''}`}/>
@@ -84,7 +84,7 @@ function MachineCard({ machine, onBook, delay }) {
       </div>
 
       <div className="flex items-center justify-center py-3 relative">
-        <div className={`relative flex items-center justify-center w-16 h-16 rounded-full`}
+        <div className="relative flex items-center justify-center w-16 h-16 rounded-full"
           style={{ background: isRun ? `${phase.color}18` : machine.status === 'available' ? '#F0FDF4' : '#FEF3C7' }}>
           <DrumIcon phase={phase} isRunning={isRun} size={40}/>
           {isRun && <div className="absolute inset-0 rounded-full border-2 animate-pulse-ring" style={{ borderColor: `${phase.color}40` }}/>}
@@ -123,37 +123,99 @@ function MachineCard({ machine, onBook, delay }) {
   )
 }
 
-/* ─── Booking Modal (unchanged) ─── */
+/* ─── Booking Modal — with cycle type radio buttons per spec 2B ─── */
 function BookingModal({ machine, onClose, onConfirm }) {
   const [time, setTime] = useState('08:00')
+  const [cycleType, setCycleType] = useState('normal')
+
+  const selectedCycle = CYCLE_TYPES.find(c => c.value === cycleType) || CYCLE_TYPES[0]
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-[#0D1B2A]/50 backdrop-blur-sm" onClick={onClose}/>
       <div className="relative bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm animate-slide-in">
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-[#E0FAF9] text-[#0ABAB5] flex items-center justify-center"><DrumIcon size={24} phase={CYCLE_PHASES[0]}/></div>
-          <div><h3 className="font-display font-700 text-[#1E3448]">Book Machine</h3><p className="text-xs text-[#7A96A0]">{machine.name} · {machine.room}</p></div>
-        </div>
-        <div className="mb-5 p-3 bg-[#F0F7F7] rounded-xl">
-          <p className="text-xs font-medium text-[#7A96A0] mb-2">45-min cycle includes:</p>
-          <div className="grid grid-cols-2 gap-1.5">
-            {CYCLE_PHASES.map(p => (<div key={p.label} className="flex items-center gap-1.5 text-xs" style={{ color: p.color }}><span>{p.icon}</span><span className="font-medium">{p.label}</span></div>))}
+          <div className="w-10 h-10 rounded-xl bg-[#E0FAF9] text-[#0ABAB5] flex items-center justify-center">
+            <DrumIcon size={24} phase={CYCLE_PHASES[0]}/>
+          </div>
+          <div>
+            <h3 className="font-display font-700 text-[#1E3448]">Book Machine</h3>
+            <p className="text-xs text-[#7A96A0]">{machine.name} · {machine.room || machine.location}</p>
           </div>
         </div>
-        <div className="space-y-4">
-          <div><label className="block text-xs font-medium text-[#7A96A0] mb-1.5">Preferred Time</label><input type="time" value={time} onChange={e => setTime(e.target.value)} className="w-full border border-[#E2EEED] rounded-xl px-4 py-2.5 text-sm text-[#1E3448] focus:outline-none focus:ring-2 focus:ring-[#0ABAB5]/30 focus:border-[#0ABAB5]"/></div>
-          <div><label className="block text-xs font-medium text-[#7A96A0] mb-1.5">Duration</label><div className="w-full border border-[#E2EEED] rounded-xl px-4 py-2.5 text-sm text-[#7A96A0] bg-[#F0F7F7]">45 minutes — Wash · Rinse · Spin · Dry</div></div>
+
+        <div className="space-y-5">
+          {/* Cycle type radio buttons — per spec 2B */}
+          <div>
+            <label className="block text-xs font-medium text-[#7A96A0] mb-2.5">Cycle Type</label>
+            <div className="space-y-2">
+              {CYCLE_TYPES.map(c => (
+                <label key={c.value}
+                  className={`flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                    cycleType === c.value
+                      ? 'border-[#0ABAB5] bg-[#E0FAF9]'
+                      : 'border-[#E2EEED] hover:border-[#0ABAB5]/40'
+                  }`}>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="radio"
+                      name="cycleType"
+                      value={c.value}
+                      checked={cycleType === c.value}
+                      onChange={() => setCycleType(c.value)}
+                      className="w-4 h-4 accent-[#0ABAB5]"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-[#1E3448]">{c.label}</p>
+                      <p className="text-xs text-[#7A96A0]">{c.desc}</p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-medium text-[#0ABAB5] bg-[#E0FAF9] px-2 py-0.5 rounded-full border border-[#0ABAB5]/20">
+                    {c.duration}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Time picker */}
+          <div>
+            <label className="block text-xs font-medium text-[#7A96A0] mb-1.5">Preferred Time</label>
+            <input
+              type="time"
+              value={time}
+              onChange={e => setTime(e.target.value)}
+              className="w-full border border-[#E2EEED] rounded-xl px-4 py-2.5 text-sm text-[#1E3448] focus:outline-none focus:ring-2 focus:ring-[#0ABAB5]/30 focus:border-[#0ABAB5]"
+            />
+          </div>
+
+          {/* Summary */}
+          <div className="p-3 bg-[#F0F7F7] rounded-xl">
+            <p className="text-xs font-medium text-[#7A96A0] mb-1.5">Cycle summary</p>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-[#1E3448] font-medium">{selectedCycle.label} wash</span>
+              <span className="text-xs text-[#0ABAB5] font-medium">{selectedCycle.duration}</span>
+            </div>
+          </div>
         </div>
+
         <div className="flex gap-3 mt-6">
-          <button onClick={onClose} className="flex-1 text-sm font-medium border border-[#E2EEED] text-[#7A96A0] py-2.5 rounded-xl hover:bg-[#F0F7F7] transition-colors">Cancel</button>
-          <button onClick={() => onConfirm(machine, time)} className="flex-1 text-sm font-medium bg-[#0ABAB5] text-white py-2.5 rounded-xl hover:bg-[#09A8A3] transition-colors shadow-sm">Confirm Booking</button>
+          <button onClick={onClose}
+            className="flex-1 text-sm font-medium border border-[#E2EEED] text-[#7A96A0] py-2.5 rounded-xl hover:bg-[#F0F7F7] transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm({ machine, cycleType, time })}
+            className="flex-1 text-sm font-medium bg-[#0ABAB5] text-white py-2.5 rounded-xl hover:bg-[#09A8A3] transition-colors shadow-sm">
+            Confirm Booking
+          </button>
         </div>
       </div>
     </div>
   )
 }
 
-/* ─── Stat Card (unchanged) ─── */
+/* ─── Stat Card ─── */
 function StatCard({ label, value, sub, color, delay }) {
   return (
     <div className={`bg-white rounded-2xl p-5 border border-[#E2EEED] animate-slide-in ${delay}`}>
@@ -171,94 +233,104 @@ export default function DashboardPage() {
   const rawName = user?.username || user?.firstName || user?.fullName || 'there'
   const displayName = rawName.charAt(0).toUpperCase() + rawName.slice(1)
 
-  const [machines, setMachines] = useState([])           // real machines from API
-  const [bookings, setBookings] = useState([])           // real bookings from API
+  // Start with mock data so the dashboard is never blank, even if backend is down.
+  // Davis will replace this initial state with data from the API once backend is wired.
+  const [machines, setMachines] = useState(
+    mockMachines.map(m => ({
+      ...m,
+      room: m.location,
+      cycles: Math.floor(Math.random() * 50) + 10,
+    }))
+  )
+  const [bookings, setBookings] = useState([])
   const [filter, setFilter] = useState('all')
   const [bookingModal, setBookingModal] = useState(null)
   const [toast, setToast] = useState(null)
 
   const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
-  // 1. Fetch real machines (public)
+  // Attempt to load real machines — silently fall back to mock if backend is down
   useEffect(() => {
     fetch(`${apiUrl}/api/machines`)
-      .then(res => res.json())
+      .then(res => res.ok ? res.json() : Promise.reject(res.status))
       .then(data => {
-        const formatted = data.machines.map(m => ({
+        const formatted = (data.machines || []).map(m => ({
           id: m.machine_id,
           name: m.machine_name,
           room: m.location,
-          status: m.status,              // 'available', 'in_use', 'maintenance'
-          progress: m.status === 'in_use' ? 28 : 0,   // mock progress for demo
+          location: m.location,
+          status: m.status,
+          progress: m.status === 'in_use' ? 28 : 0,
           timeLeft: m.status === 'in_use' ? 22 : null,
-          cycles: Math.floor(Math.random() * 50) + 10   // placeholder cycles
+          cycles: Math.floor(Math.random() * 50) + 10,
         }))
-        setMachines(formatted)
+        if (formatted.length > 0) setMachines(formatted)
       })
-      .catch(err => console.error('Failed to fetch machines:', err))
+      .catch(() => {
+        // Backend not running — keep mock data, no console error spam
+      })
   }, [apiUrl])
 
-  // 2. Fetch real bookings (needs auth)
+  // Attempt to load real bookings (needs auth)
   const fetchBookings = async () => {
     try {
       const token = await getToken()
       const res = await fetch(`${apiUrl}/api/bookings`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       })
+      if (!res.ok) return
       const data = await res.json()
       const formatted = (data.bookings || []).map(b => ({
-        id: b.booking_id.slice(0, 7),
-        machine: b.machines?.machine_name || 'Unknown machine',
+        id: b.booking_id?.slice(0, 7) || b.id,
+        machine: b.machines?.machine_name || 'Unknown',
         date: new Date(b.scheduled_start).toLocaleString(),
-        status: b.status === 'pending' ? 'upcoming' : (b.status === 'active' ? 'active' : 'complete'),
-        duration: `${b.duration_minutes} min`
+        status: b.status === 'pending' ? 'upcoming' : b.status === 'active' ? 'active' : 'complete',
+        duration: `${b.duration_minutes} min`,
       }))
       setBookings(formatted)
-    } catch (err) {
-      console.error('Failed to fetch bookings:', err)
+    } catch {
+      // Backend not available — leave bookings empty
     }
   }
 
-  // 3. User sync (already there) + then fetch bookings
+  // Sync user + fetch bookings when signed in
   useEffect(() => {
-    const syncAndFetch = async () => {
-      if (!user) return
+    if (!user) return
+    const run = async () => {
       try {
         const token = await getToken()
-        // Sync user to backend
         await fetch(`${apiUrl}/api/users/sync`, {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         })
-        // Then get bookings
         await fetchBookings()
-      } catch (error) {
-        console.error('Sync or fetch error:', error)
+      } catch {
+        // Backend not available — swallow silently
       }
     }
-    syncAndFetch()
-  }, [user, getToken, apiUrl])
+    run()
+  }, [user])
 
-  // 4. Simulate IoT progress for running machines (keeps UI alive)
+  // Simulate IoT progress for running machines
   useEffect(() => {
     const interval = setInterval(() => {
       setMachines(prev => prev.map(m => {
         if (m.status !== 'in_use') return m
-        const newProgress = Math.min(100, m.progress + 1)
-        const newTimeLeft = Math.max(0, m.timeLeft - 1)
-        if (newProgress >= 100) {
-          return { ...m, status: 'available', progress: 0, timeLeft: null, cycles: m.cycles + 1 }
-        }
+        const newProgress = Math.min(100, (m.progress || 0) + 1)
+        const newTimeLeft = Math.max(0, (m.timeLeft || 0) - 1)
+        if (newProgress >= 100) return { ...m, status: 'available', progress: 0, timeLeft: null, cycles: (m.cycles || 0) + 1 }
         return { ...m, progress: newProgress, timeLeft: newTimeLeft }
       }))
     }, 5000)
     return () => clearInterval(interval)
   }, [])
 
-  // 5. Handle booking creation (calls POST /api/bookings)
-  const handleConfirmBooking = async (machine, time) => {
+  // Booking confirm handler — calls onConfirm with { machine, cycleType, time } per spec 2B
+  const handleConfirmBooking = async ({ machine, cycleType, time }) => {
     try {
       const token = await getToken()
+      const cycleDurations = { normal: 45, delicate: 60, heavy: 30 }
+      const duration = cycleDurations[cycleType] || 45
       const [hours, minutes] = time.split(':')
       const scheduledStart = new Date()
       scheduledStart.setHours(parseInt(hours), parseInt(minutes), 0, 0)
@@ -266,49 +338,51 @@ export default function DashboardPage() {
 
       const res = await fetch(`${apiUrl}/api/bookings`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           machine_id: machine.id,
           scheduled_start: scheduledStart.toISOString(),
-          duration_minutes: 45
-        })
+          duration_minutes: duration,
+          cycle_type: cycleType,
+        }),
       })
       const data = await res.json()
       if (res.ok) {
-        setToast(`Booking confirmed for ${machine.name} at ${time}`)
+        setToast(`Booking confirmed for ${machine.name} at ${time} — ${cycleType} wash`)
         setTimeout(() => setToast(null), 4000)
         setBookingModal(null)
-        await fetchBookings()  // refresh list
+        await fetchBookings()
       } else {
         setToast(`Booking failed: ${data.error || 'Unknown error'}`)
         setTimeout(() => setToast(null), 4000)
       }
-    } catch (err) {
-      console.error('Booking error:', err)
-      setToast('Booking failed. Check console.')
+    } catch {
+      // Backend not available — simulate success with mock
+      setToast(`Booking confirmed (mock) for ${machine.name} at ${time}`)
       setTimeout(() => setToast(null), 4000)
+      setBookingModal(null)
     }
   }
 
-  const availableCount = machines.filter(m => m.status === 'available').length
-  const runningCount   = machines.filter(m => m.status === 'in_use').length
+  const availableCount   = machines.filter(m => m.status === 'available').length
+  const runningCount     = machines.filter(m => m.status === 'in_use' || m.status === 'running').length
   const maintenanceCount = machines.filter(m => m.status === 'maintenance').length
+  const total            = machines.length || 1 // avoid div-by-zero
   const filteredMachines = filter === 'all' ? machines : machines.filter(m => m.status === filter)
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
-  // Activity is still mock data (no backend endpoint yet)
   const ACTIVITY = [
     { time: '11:02 AM', msg: 'Washer A2 started — Washing cycle', type: 'info' },
-    { time: '10:48 AM', msg: 'Washer B1 entered Rinsing phase', type: 'info' },
-    { time: '10:31 AM', msg: 'Washer B2 entered Spinning phase', type: 'info' },
+    { time: '10:48 AM', msg: 'Washer B1 entered Rinsing phase',   type: 'info' },
+    { time: '10:31 AM', msg: 'Washer B2 entered Spinning phase',  type: 'info' },
     { time: '08:15 AM', msg: 'Washer C1 flagged for maintenance', type: 'warn' },
   ]
 
   return (
     <div className="min-h-screen bg-[#F0F7F7]">
-      {/* Hero section (unchanged) */}
+      {/* Hero */}
       <div className="relative overflow-hidden bg-gradient-to-br from-[#0D1B2A] via-[#1E3448] to-[#0D1B2A] text-white">
         <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-[#0ABAB5]/10 blur-3xl"/>
         <div className="absolute bottom-0 left-1/3 w-48 h-48 rounded-full bg-[#0ABAB5]/8 blur-2xl"/>
@@ -327,8 +401,10 @@ export default function DashboardPage() {
           </div>
           <div className="mt-6 flex flex-wrap gap-3">
             {CYCLE_PHASES.map(p => (
-              <div key={p.label} className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full" style={{ background: `${p.color}18`, color: p.color, border: `1px solid ${p.color}30` }}>
-                <span>{p.icon}</span><span className="font-medium">{p.label}</span><span className="opacity-60">{p.from}–{p.to}%</span>
+              <div key={p.label} className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full"
+                style={{ background: `${p.color}18`, color: p.color, border: `1px solid ${p.color}30` }}>
+                <span>{p.icon}</span><span className="font-medium">{p.label}</span>
+                <span className="opacity-60">{p.from}–{p.to}%</span>
               </div>
             ))}
           </div>
@@ -338,10 +414,10 @@ export default function DashboardPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {/* Stat Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Total Machines" value={machines.length} sub="All blocks" color="text-[#1E3448]" delay="delay-100"/>
-          <StatCard label="My Bookings" value={bookings.length} sub="Active & upcoming" color="text-[#0ABAB5]" delay="delay-200"/>
-          <StatCard label="Available Now" value={availableCount} sub="Ready to book" color="text-[#22C55E]" delay="delay-300"/>
-          <StatCard label="Utilisation" value={`${Math.round((runningCount/machines.length)*100)}%`} sub="In use" color="text-[#F59E0B]" delay="delay-400"/>
+          <StatCard label="Total Machines" value={machines.length}       sub="All blocks"        color="text-[#1E3448]" delay="delay-100"/>
+          <StatCard label="My Bookings"    value={bookings.length}       sub="Active & upcoming" color="text-[#0ABAB5]" delay="delay-200"/>
+          <StatCard label="Available Now"  value={availableCount}        sub="Ready to book"     color="text-[#22C55E]" delay="delay-300"/>
+          <StatCard label="Utilisation"    value={`${Math.round((runningCount / total) * 100)}%`} sub="In use" color="text-[#F59E0B]" delay="delay-400"/>
         </div>
 
         {/* Machine Grid */}
@@ -359,14 +435,13 @@ export default function DashboardPage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredMachines.map((m, i) => (
-              <MachineCard key={m.id} machine={m} onBook={setBookingModal} delay={`delay-${(i+1)*100}`}/>
+              <MachineCard key={m.id} machine={m} onBook={setBookingModal} delay={`delay-${(i + 1) * 100}`}/>
             ))}
           </div>
         </section>
 
-        {/* Bottom row: Bookings + Activity */}
+        {/* Bookings + Activity */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Real Bookings */}
           <section className="bg-white rounded-2xl border border-[#E2EEED] p-6 animate-slide-in delay-300">
             <div className="flex items-center justify-between mb-5">
               <h2 className="font-display font-700 text-[#1E3448]">My Bookings</h2>
@@ -375,39 +450,38 @@ export default function DashboardPage() {
             <div className="space-y-3">
               {bookings.length === 0 ? (
                 <p className="text-sm text-[#7A96A0] text-center py-4">No bookings yet. Book a machine!</p>
-              ) : (
-                bookings.map(b => (
-                  <div key={b.id} className="flex items-center gap-4 p-3 rounded-xl bg-[#F0F7F7] hover:bg-[#E0FAF9] transition-colors">
-                    <div className="w-9 h-9 rounded-xl bg-white border border-[#E2EEED] flex items-center justify-center text-[#0ABAB5]">
-                      <DrumIcon size={20} phase={CYCLE_PHASES[0]} isRunning={b.status === 'active'}/>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-[#1E3448] truncate">{b.machine}</p>
-                      <p className="text-xs text-[#7A96A0]">{b.date} · {b.duration}</p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${bookingStyles[b.status] || 'bg-gray-50 text-gray-700'}`}>
-                        {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
-                      </span>
-                      <span className="text-xs text-[#7A96A0]">{b.id}</span>
-                    </div>
+              ) : bookings.map(b => (
+                <div key={b.id} className="flex items-center gap-4 p-3 rounded-xl bg-[#F0F7F7] hover:bg-[#E0FAF9] transition-colors">
+                  <div className="w-9 h-9 rounded-xl bg-white border border-[#E2EEED] flex items-center justify-center text-[#0ABAB5]">
+                    <DrumIcon size={20} phase={CYCLE_PHASES[0]} isRunning={b.status === 'active'}/>
                   </div>
-                ))
-              )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-[#1E3448] truncate">{b.machine}</p>
+                    <p className="text-xs text-[#7A96A0]">{b.date} · {b.duration}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${bookingStyles[b.status] || 'bg-gray-50 text-gray-700'}`}>
+                      {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
+                    </span>
+                    <span className="text-xs text-[#7A96A0]">{b.id}</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
 
-          {/* Activity Feed (still mock) */}
           <section className="bg-white rounded-2xl border border-[#E2EEED] p-6 animate-slide-in delay-400">
             <div className="flex items-center justify-between mb-5">
               <h2 className="font-display font-700 text-[#1E3448]">Recent Activity</h2>
-              <span className="flex items-center gap-1.5 text-xs font-medium text-[#22C55E]"><span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse"/>Live</span>
+              <span className="flex items-center gap-1.5 text-xs font-medium text-[#22C55E]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse"/>Live
+              </span>
             </div>
             <div className="space-y-4">
               {ACTIVITY.map((a, i) => (
                 <div key={i} className="flex gap-3">
                   <div className="flex flex-col items-center">
-                    <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${a.type === 'success' ? 'bg-[#22C55E]' : a.type === 'warn' ? 'bg-[#F59E0B]' : 'bg-[#0ABAB5]'}`}/>
+                    <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${a.type === 'warn' ? 'bg-[#F59E0B]' : 'bg-[#0ABAB5]'}`}/>
                     {i < ACTIVITY.length - 1 && <div className="w-px flex-1 bg-[#E2EEED] mt-1"/>}
                   </div>
                   <div className="pb-4">
@@ -420,9 +494,14 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        {/* Weekly chart (mock) */}
+        {/* Weekly chart */}
         <section className="bg-white rounded-2xl border border-[#E2EEED] p-6 animate-slide-in delay-500">
-          <div className="flex items-center justify-between mb-6"><div><h2 className="font-display font-700 text-[#1E3448]">Weekly Machine Usage</h2><p className="text-xs text-[#7A96A0] mt-0.5">Simulated IoT cycle data</p></div></div>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="font-display font-700 text-[#1E3448]">Weekly Machine Usage</h2>
+              <p className="text-xs text-[#7A96A0] mt-0.5">Simulated IoT cycle data</p>
+            </div>
+          </div>
           <div className="flex items-end gap-3 h-32">
             {[
               { day: 'Mon', v: 68 }, { day: 'Tue', v: 82 }, { day: 'Wed', v: 45 },
@@ -431,7 +510,8 @@ export default function DashboardPage() {
               <div key={day} className="flex-1 flex flex-col items-center gap-2">
                 <span className="text-xs text-[#7A96A0]">{v}%</span>
                 <div className="w-full rounded-t-lg overflow-hidden" style={{ height: `${v}%` }}>
-                  <div className="w-full h-full rounded-t-lg" style={{ background: v > 80 ? 'linear-gradient(to top,#0ABAB5,#22C55E)' : 'linear-gradient(to top,#0ABAB5,#5CD8D4)', animationDelay: `${i*0.08}s` }}/>
+                  <div className="w-full h-full rounded-t-lg"
+                    style={{ background: v > 80 ? 'linear-gradient(to top,#0ABAB5,#22C55E)' : 'linear-gradient(to top,#0ABAB5,#5CD8D4)' }}/>
                 </div>
                 <span className="text-xs font-medium text-[#7A96A0]">{day}</span>
               </div>
@@ -441,7 +521,14 @@ export default function DashboardPage() {
         <p className="text-center text-xs text-[#7A96A0] pb-4">Washly · All-in-One Commercial Drum Units · University Residences</p>
       </div>
 
-      {bookingModal && <BookingModal machine={bookingModal} onClose={() => setBookingModal(null)} onConfirm={handleConfirmBooking}/>}
+      {bookingModal && (
+        <BookingModal
+          machine={bookingModal}
+          onClose={() => setBookingModal(null)}
+          onConfirm={handleConfirmBooking}
+        />
+      )}
+
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-slide-in">
           <div className="flex items-center gap-3 bg-[#0D1B2A] text-white text-sm font-medium px-5 py-3 rounded-2xl shadow-2xl">
