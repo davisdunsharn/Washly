@@ -30,7 +30,8 @@ app.get('/', (req, res) => {
       chat: '/api/chat',
       sensors: '/api/sensors',
       ai: '/api/ai',
-      notify: '/api/notify'
+      notify: '/api/notify',
+      admin: '/api/admin'          // added admin endpoints
     }
   });
 });
@@ -46,14 +47,16 @@ const chatRouter = require('./routes/chat');
 const sensorsRouter = require('./routes/sensors');
 const aiRouter = require('./routes/ai');
 const notifyRouter = require('./routes/notify');
+const adminRouter = require('./routes/admin');   // <-- add this
 
-app.use('/api/users', usersRouter);
+app.use('/api/users', usersRouter);   
 app.use('/api/machines', machinesRouter);
 app.use('/api/bookings', bookingsRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/sensors', sensorsRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api/notify', notifyRouter);
+app.use('/api/admin', adminRouter);   // <-- add this
 
 app.use((err, req, res, next) => {
   console.error('Error:', err.stack);

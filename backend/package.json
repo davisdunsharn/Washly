@@ -4,19 +4,21 @@
   "description": "Washly - Smart Laundry Booking & Tracking System Backend API",
   "main": "app.js",
   "scripts": {
-  "start": "node app.js",
-  "dev": "node ./node_modules/nodemon/bin/nodemon.js app.js"
-},
+    "start": "node app.js",
+    "dev": "node ./node_modules/nodemon/bin/nodemon.js app.js"
+  },
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.0",
     "@clerk/clerk-sdk-node": "^4.12.0",
-    "express": "^4.18.2",
+    "@sendgrid/mail": "^8.1.6",
+    "@supabase/supabase-js": "^2.39.0",
+    "axios": "^1.6.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "jsonwebtoken": "^9.0.2",
-    "axios": "^1.6.2",
+    "express": "^4.18.2",
     "groq-sdk": "^0.3.2",
-    "nodemailer": "^6.9.7"
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.9.7",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
