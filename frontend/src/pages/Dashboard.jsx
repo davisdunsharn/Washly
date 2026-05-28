@@ -1,8 +1,9 @@
 import { useUser, useAuth } from '@clerk/clerk-react'
 import { useState, useEffect } from 'react'
-import { mockMachines, CYCLE_TYPES } from '../mock/data.js'
+import { createClient } from '@supabase/supabase-js'
+import { CYCLE_TYPES } from '../mock/data.js'
 
-/* ─── Cycle phases ─── */
+// ─── Cycle phases ──────────────────────────────────────────────────────────────
 const CYCLE_PHASES = [
   { label: 'Washing',  from: 0,  to: 40,  color: '#0ABAB5', icon: '🫧', desc: 'Drum rotating with detergent' },
   { label: 'Rinsing',  from: 41, to: 65,  color: '#378ADD', icon: '💧', desc: 'Flushing out soap & residue'  },
@@ -26,7 +27,7 @@ const bookingStyles = {
   upcoming: 'bg-blue-50 text-blue-700',
 }
 
-/* ─── Drum SVG ─── */
+// ─── Drum SVG ────────────────────────────────────────────────────────────────
 function DrumIcon({ phase, isRunning, size = 40 }) {
   const color = phase?.color || '#0ABAB5'
   const spinClass = isRunning ? (phase?.label === 'Spinning' ? 'animate-spin' : 'animate-spin-slow') : ''
@@ -43,7 +44,7 @@ function DrumIcon({ phase, isRunning, size = 40 }) {
   )
 }
 
-/* ─── Phase stepper ─── */
+// ─── Phase stepper ───────────────────────────────────────────────────────────
 function PhaseSteps({ progress }) {
   return (
     <div className="flex items-center justify-between gap-1 mb-3">
@@ -63,7 +64,7 @@ function PhaseSteps({ progress }) {
   )
 }
 
-/* ─── Machine Card ─── */
+// ─── Machine Card ────────────────────────────────────────────────────────────
 function MachineCard({ machine, onBook, delay }) {
   const displayStatus = machine.status === 'in_use' ? 'running' : machine.status
   const s = statusStyles[displayStatus] || statusStyles.maintenance
@@ -123,11 +124,10 @@ function MachineCard({ machine, onBook, delay }) {
   )
 }
 
-/* ─── Booking Modal — with cycle type radio buttons per spec 2B ─── */
+// ─── Booking Modal ───────────────────────────────────────────────────────────
 function BookingModal({ machine, onClose, onConfirm }) {
   const [time, setTime] = useState('08:00')
   const [cycleType, setCycleType] = useState('normal')
-
   const selectedCycle = CYCLE_TYPES.find(c => c.value === cycleType) || CYCLE_TYPES[0]
 
   return (
@@ -145,7 +145,6 @@ function BookingModal({ machine, onClose, onConfirm }) {
         </div>
 
         <div className="space-y-5">
-          {/* Cycle type radio buttons — per spec 2B */}
           <div>
             <label className="block text-xs font-medium text-[#7A96A0] mb-2.5">Cycle Type</label>
             <div className="space-y-2">
@@ -178,7 +177,6 @@ function BookingModal({ machine, onClose, onConfirm }) {
             </div>
           </div>
 
-          {/* Time picker */}
           <div>
             <label className="block text-xs font-medium text-[#7A96A0] mb-1.5">Preferred Time</label>
             <input
@@ -189,7 +187,6 @@ function BookingModal({ machine, onClose, onConfirm }) {
             />
           </div>
 
-          {/* Summary */}
           <div className="p-3 bg-[#F0F7F7] rounded-xl">
             <p className="text-xs font-medium text-[#7A96A0] mb-1.5">Cycle summary</p>
             <div className="flex items-center justify-between">
@@ -215,7 +212,7 @@ function BookingModal({ machine, onClose, onConfirm }) {
   )
 }
 
-/* ─── Stat Card ─── */
+// ─── Stat Card ───────────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, color, delay }) {
   return (
     <div className={`bg-white rounded-2xl p-5 border border-[#E2EEED] animate-slide-in ${delay}`}>
@@ -226,22 +223,14 @@ function StatCard({ label, value, sub, color, delay }) {
   )
 }
 
-/* ─── Main Dashboard ─── */
+// ─── Main Dashboard ──────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { user } = useUser()
   const { getToken } = useAuth()
   const rawName = user?.username || user?.firstName || user?.fullName || 'there'
   const displayName = rawName.charAt(0).toUpperCase() + rawName.slice(1)
 
-  // Start with mock data so the dashboard is never blank, even if backend is down.
-  // Davis will replace this initial state with data from the API once backend is wired.
-  const [machines, setMachines] = useState(
-    mockMachines.map(m => ({
-      ...m,
-      room: m.location,
-      cycles: Math.floor(Math.random() * 50) + 10,
-    }))
-  )
+  const [machines, setMachines] = useState([])
   const [bookings, setBookings] = useState([])
   const [filter, setFilter] = useState('all')
   const [bookingModal, setBookingModal] = useState(null)
@@ -249,29 +238,53 @@ export default function DashboardPage() {
 
   const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
-  // Attempt to load real machines — silently fall back to mock if backend is down
-  useEffect(() => {
-    fetch(`${apiUrl}/api/machines`)
-      .then(res => res.ok ? res.json() : Promise.reject(res.status))
-      .then(data => {
-        const formatted = (data.machines || []).map(m => ({
-          id: m.machine_id,
-          name: m.machine_name,
-          room: m.location,
-          location: m.location,
-          status: m.status,
-          progress: m.status === 'in_use' ? 28 : 0,
-          timeLeft: m.status === 'in_use' ? 22 : null,
-          cycles: Math.floor(Math.random() * 50) + 10,
-        }))
-        if (formatted.length > 0) setMachines(formatted)
-      })
-      .catch(() => {
-        // Backend not running — keep mock data, no console error spam
-      })
-  }, [apiUrl])
+  // Supabase client (optional)
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+  const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null
 
-  // Attempt to load real bookings (needs auth)
+  // Load real machines (once, no random cycles)
+  useEffect(() => {
+    const loadMachines = async () => {
+      try {
+        const res = await fetch(`${apiUrl}/api/machines`)
+        if (res.ok) {
+          const data = await res.json()
+          const formatted = (data.machines || []).map(m => ({
+            id: m.machine_id,
+            name: m.machine_name,
+            room: m.location,
+            location: m.location,
+            status: m.status,
+            progress: m.status === 'in_use' ? 28 : 0,
+            timeLeft: m.status === 'in_use' ? 22 : null,
+            cycles: m.capacity_cycles || 0,   // 🔥 FIXED: no random numbers
+          }))
+          setMachines(formatted)
+        }
+      } catch (err) {
+        // fallback to empty array
+      }
+    }
+    loadMachines()
+  }, [apiUrl])  // runs only once on mount
+
+  // Real-time subscription (only if Supabase is configured)
+  useEffect(() => {
+    if (!supabase) return
+    const channel = supabase
+      .channel('machines')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'machines' }, (payload) => {
+        setMachines(prev => prev.map(m =>
+          m.id === payload.new.machine_id
+            ? { ...m, status: payload.new.status }
+            : m
+        ))
+      })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [supabase])
+
   const fetchBookings = async () => {
     try {
       const token = await getToken()
@@ -286,17 +299,17 @@ export default function DashboardPage() {
         date: new Date(b.scheduled_start).toLocaleString(),
         status: b.status === 'pending' ? 'upcoming' : b.status === 'active' ? 'active' : 'complete',
         duration: `${b.duration_minutes} min`,
+        booking_id: b.booking_id,
       }))
       setBookings(formatted)
     } catch {
-      // Backend not available — leave bookings empty
+      // ignore
     }
   }
 
-  // Sync user + fetch bookings when signed in
   useEffect(() => {
     if (!user) return
-    const run = async () => {
+    const syncAndFetch = async () => {
       try {
         const token = await getToken()
         await fetch(`${apiUrl}/api/users/sync`, {
@@ -305,27 +318,35 @@ export default function DashboardPage() {
         })
         await fetchBookings()
       } catch {
-        // Backend not available — swallow silently
+        // ignore
       }
     }
-    run()
+    syncAndFetch()
   }, [user])
 
-  // Simulate IoT progress for running machines
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setMachines(prev => prev.map(m => {
-        if (m.status !== 'in_use') return m
-        const newProgress = Math.min(100, (m.progress || 0) + 1)
-        const newTimeLeft = Math.max(0, (m.timeLeft || 0) - 1)
-        if (newProgress >= 100) return { ...m, status: 'available', progress: 0, timeLeft: null, cycles: (m.cycles || 0) + 1 }
-        return { ...m, progress: newProgress, timeLeft: newTimeLeft }
-      }))
-    }, 5000)
-    return () => clearInterval(interval)
-  }, [])
+  const startMachine = async (bookingId) => {
+    try {
+      const token = await getToken()
+      const res = await fetch(`${apiUrl}/api/machines/start`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ booking_id: bookingId })
+      })
+      if (res.ok) {
+        setToast('Machine started! Watch progress live.')
+        setTimeout(() => setToast(null), 4000)
+        await fetchBookings()
+      } else {
+        const err = await res.json()
+        setToast(`Start failed: ${err.error}`)
+        setTimeout(() => setToast(null), 4000)
+      }
+    } catch {
+      setToast('Start failed. Network error.')
+      setTimeout(() => setToast(null), 4000)
+    }
+  }
 
-  // Booking confirm handler — calls onConfirm with { machine, cycleType, time } per spec 2B
   const handleConfirmBooking = async ({ machine, cycleType, time }) => {
     try {
       const token = await getToken()
@@ -352,12 +373,14 @@ export default function DashboardPage() {
         setTimeout(() => setToast(null), 4000)
         setBookingModal(null)
         await fetchBookings()
+      } else if (res.status === 409) {
+        setToast(`Booking failed: ${data.error || 'You already have 3 active bookings.'}`)
+        setTimeout(() => setToast(null), 4000)
       } else {
         setToast(`Booking failed: ${data.error || 'Unknown error'}`)
         setTimeout(() => setToast(null), 4000)
       }
     } catch {
-      // Backend not available — simulate success with mock
       setToast(`Booking confirmed (mock) for ${machine.name} at ${time}`)
       setTimeout(() => setToast(null), 4000)
       setBookingModal(null)
@@ -367,7 +390,7 @@ export default function DashboardPage() {
   const availableCount   = machines.filter(m => m.status === 'available').length
   const runningCount     = machines.filter(m => m.status === 'in_use' || m.status === 'running').length
   const maintenanceCount = machines.filter(m => m.status === 'maintenance').length
-  const total            = machines.length || 1 // avoid div-by-zero
+  const total            = machines.length || 1
   const filteredMachines = filter === 'all' ? machines : machines.filter(m => m.status === filter)
 
   const hour = new Date().getHours()
@@ -464,6 +487,14 @@ export default function DashboardPage() {
                       {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
                     </span>
                     <span className="text-xs text-[#7A96A0]">{b.id}</span>
+                    {b.status === 'upcoming' && (
+                      <button
+                        onClick={() => startMachine(b.booking_id)}
+                        className="mt-1 text-xs bg-[#0ABAB5] text-white px-2 py-0.5 rounded"
+                      >
+                        Start
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -494,7 +525,7 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        {/* Weekly chart */}
+        {/* Weekly chart (mock) */}
         <section className="bg-white rounded-2xl border border-[#E2EEED] p-6 animate-slide-in delay-500">
           <div className="flex items-center justify-between mb-6">
             <div>

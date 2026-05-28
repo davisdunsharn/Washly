@@ -28,7 +28,7 @@ router.post('/', clerkAuth, async (req, res) => {
 
     const chatCompletion = await groq.chat.completions.create({
       messages: messages,
-      model: 'mixtral-8x7b-32768',
+      model: 'llama-3.1-8b-instant',
       max_tokens: 1024,
     });
     const reply = chatCompletion.choices[0]?.message?.content || 'Sorry, I could not respond.';

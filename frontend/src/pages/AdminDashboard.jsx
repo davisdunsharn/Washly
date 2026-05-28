@@ -1,35 +1,10 @@
 // src/pages/AdminDashboard.jsx
-// Admin-only page. Access is controlled by ProtectedAdminRoute.
-// Uses mock data — replace with real API calls when ready.
 import { useState, useEffect, useRef } from 'react'
-import { mockStats, mockBookings, mockChartData } from '../mock/data.js'
+import { useAuth } from '@clerk/clerk-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell,
 } from 'recharts'
-
-// ─── Mock extended data ───────────────────────────────────────────────────────
-const INITIAL_MACHINES = [
-  { id: '1', name: 'Washer A1', location: 'Block A · Ground',  type: 'washer', status: 'available',   progress: 0,  timeLeft: null, cycles: 34 },
-  { id: '2', name: 'Washer A2', location: 'Block A · Ground',  type: 'washer', status: 'in_use',      progress: 28, timeLeft: 22,   cycles: 51 },
-  { id: '3', name: 'Washer A3', location: 'Block A · Level 1', type: 'washer', status: 'available',   progress: 0,  timeLeft: null, cycles: 22 },
-  { id: '4', name: 'Dryer B1',  location: 'Block B · Ground',  type: 'dryer',  status: 'maintenance', progress: 0,  timeLeft: null, cycles: 72 },
-  { id: '5', name: 'Dryer B2',  location: 'Block B · Ground',  type: 'dryer',  status: 'in_use',      progress: 71, timeLeft: 8,    cycles: 18 },
-  { id: '6', name: 'Washer C1', location: 'Block C · Ground',  type: 'washer', status: 'available',   progress: 0,  timeLeft: null, cycles: 9  },
-  { id: '7', name: 'Washer C2', location: 'Block C · Ground',  type: 'washer', status: 'in_use',      progress: 45, timeLeft: 15,   cycles: 37 },
-  { id: '8', name: 'Dryer C1',  location: 'Block C · Level 1', type: 'dryer',  status: 'maintenance', progress: 0,  timeLeft: null, cycles: 29 },
-]
-
-const INITIAL_BOOKINGS = [
-  { id: 'WL-001', user: 'Alice Dlamini',   machine: 'Washer A2', time: '2025-05-15 14:00', status: 'pending',   cycleType: 'normal'   },
-  { id: 'WL-002', user: 'Brian Nkosi',     machine: 'Dryer B2',  time: '2025-05-15 14:30', status: 'active',    cycleType: 'heavy'    },
-  { id: 'WL-003', user: 'Carmen Petersen', machine: 'Washer A1', time: '2025-05-15 15:00', status: 'completed', cycleType: 'delicate' },
-  { id: 'WL-004', user: 'Dennis Mokoena',  machine: 'Washer A3', time: '2025-05-15 15:00', status: 'pending',   cycleType: 'normal'   },
-  { id: 'WL-005', user: 'Emily van Wyk',   machine: 'Washer C2', time: '2025-05-15 16:00', status: 'cancelled', cycleType: 'normal'   },
-  { id: 'WL-006', user: 'Thabo Sithole',   machine: 'Washer A2', time: '2025-05-15 17:00', status: 'active',    cycleType: 'delicate' },
-  { id: 'WL-007', user: 'Amara Osei',      machine: 'Dryer B1',  time: '2025-05-15 17:30', status: 'pending',   cycleType: 'heavy'    },
-  { id: 'WL-008', user: 'Sipho Khumalo',   machine: 'Washer C1', time: '2025-05-15 18:00', status: 'completed', cycleType: 'normal'   },
-]
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TEAL  = '#0ABAB5'
@@ -92,7 +67,7 @@ function Toast({ message, type = 'success', onDone }) {
   useEffect(() => {
     const t = setTimeout(onDone, 3000)
     return () => clearTimeout(t)
-  }, [message])
+  }, [message, onDone])
   const dot = type === 'delete' ? RED : type === 'warning' ? AMBER : GREEN
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-slide-in">
@@ -133,7 +108,6 @@ function MachineModal({ machine, onSave, onClose }) {
     onSave({ ...form, cycles: Number(form.cycles) || 0 })
   }
 
-  // Close on backdrop click
   function handleBackdrop(ev) {
     if (ev.target === ev.currentTarget) onClose()
   }
@@ -144,7 +118,6 @@ function MachineModal({ machine, onSave, onClose }) {
       style={{ background: 'rgba(13,27,42,0.6)', backdropFilter: 'blur(4px)' }}
       onClick={handleBackdrop}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-slide-in">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-[#E2EEED]">
           <div>
             <h2 className="font-display font-700 text-[#1E3448] text-lg">
@@ -161,10 +134,7 @@ function MachineModal({ machine, onSave, onClose }) {
             </svg>
           </button>
         </div>
-
-        {/* Body */}
         <div className="px-6 py-5 space-y-4">
-          {/* Name */}
           <div>
             <label className="block text-xs font-700 text-[#1E3448] uppercase tracking-widest mb-1.5">
               Machine Name *
@@ -182,8 +152,6 @@ function MachineModal({ machine, onSave, onClose }) {
             />
             {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
           </div>
-
-          {/* Type */}
           <div>
             <label className="block text-xs font-700 text-[#1E3448] uppercase tracking-widest mb-1.5">
               Type
@@ -201,8 +169,6 @@ function MachineModal({ machine, onSave, onClose }) {
               ))}
             </div>
           </div>
-
-          {/* Location */}
           <div>
             <label className="block text-xs font-700 text-[#1E3448] uppercase tracking-widest mb-1.5">
               Location *
@@ -219,8 +185,6 @@ function MachineModal({ machine, onSave, onClose }) {
             </select>
             {errors.location && <p className="text-xs text-red-500 mt-1">{errors.location}</p>}
           </div>
-
-          {/* Status */}
           <div>
             <label className="block text-xs font-700 text-[#1E3448] uppercase tracking-widest mb-1.5">
               Status
@@ -239,8 +203,6 @@ function MachineModal({ machine, onSave, onClose }) {
               ))}
             </div>
           </div>
-
-          {/* Cycles (edit only) */}
           {isEdit && (
             <div>
               <label className="block text-xs font-700 text-[#1E3448] uppercase tracking-widest mb-1.5">
@@ -255,8 +217,6 @@ function MachineModal({ machine, onSave, onClose }) {
             </div>
           )}
         </div>
-
-        {/* Footer */}
         <div className="px-6 py-4 border-t border-[#E2EEED] flex items-center justify-end gap-3">
           <button onClick={onClose}
             className="text-sm font-medium text-[#7A96A0] hover:text-[#1E3448] px-4 py-2 rounded-xl hover:bg-[#F0F7F7] transition-colors">
@@ -311,18 +271,27 @@ function DeleteModal({ machine, onConfirm, onClose }) {
   )
 }
 
-// ─── Section: Stats cards ─────────────────────────────────────────────────────
-function StatsSection({ machines }) {
-  const total       = machines.length
-  const inUse       = machines.filter(m => m.status === 'in_use').length
-  const maintenance = machines.filter(m => m.status === 'maintenance').length
-  const util        = total ? Math.round((inUse / total) * 100) : 0
+// ─── Section: Stats cards (real data) ─────────────────────────────────────────
+function StatsSection({ stats }) {
+  if (!stats) {
+    return (
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="bg-white rounded-2xl border border-[#E2EEED] p-5 animate-pulse">
+            <div className="h-4 bg-gray-200 rounded w-3/4 mb-3"></div>
+            <div className="h-8 bg-gray-200 rounded w-1/2"></div>
+          </div>
+        ))}
+      </div>
+    )
+  }
 
+  const { totalMachines, activeBookings, utilisation, avgWaitTime } = stats
   const cards = [
-    { label: 'Total Machines',  value: total,       sub: 'Across all blocks',         color: SLATE,      icon: '🫧' },
-    { label: 'Active Bookings', value: mockStats.activeBookings, sub: 'In progress right now', color: TEAL,  icon: '📅' },
-    { label: 'Utilisation',     value: `${util}%`,  sub: 'Machines currently in use', color: AMBER,      icon: '📊' },
-    { label: 'Avg Wait Time',   value: `${mockStats.avgWaitTime}m`, sub: 'Until next slot',  color: '#8B5CF6', icon: '⏱️' },
+    { label: 'Total Machines',  value: totalMachines,       sub: 'Across all blocks',         color: SLATE,      icon: '🫧' },
+    { label: 'Active Bookings', value: activeBookings,      sub: 'In progress right now',     color: TEAL,       icon: '📅' },
+    { label: 'Utilisation',     value: `${utilisation}%`,   sub: 'Machines currently in use', color: AMBER,      icon: '📊' },
+    { label: 'Avg Wait Time',   value: `${avgWaitTime}m`,   sub: 'Until next slot',           color: '#8B5CF6',  icon: '⏱️' },
   ]
 
   return (
@@ -341,11 +310,12 @@ function StatsSection({ machines }) {
   )
 }
 
-// ─── Section: Machine CRUD ────────────────────────────────────────────────────
-function MachinesSection({ machines, setMachines, showToast }) {
-  const [modal, setModal]     = useState(null)  // null | { mode: 'add' | 'edit' | 'delete', machine }
-  const [search, setSearch]   = useState('')
-  const [filter, setFilter]   = useState('all') // all | available | in_use | maintenance
+// ─── Section: Machine CRUD (self-contained with useAuth) ──────────────────────
+function MachinesSection({ machines, setMachines, showToast, apiUrl, refreshStats }) {
+  const { getToken } = useAuth()
+  const [modal, setModal] = useState(null)
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState('all')
 
   const filtered = machines.filter(m => {
     const matchSearch = m.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -354,39 +324,103 @@ function MachinesSection({ machines, setMachines, showToast }) {
     return matchSearch && matchFilter
   })
 
-  function openAdd()        { setModal({ mode: 'add', machine: null }) }
-  function openEdit(m)      { setModal({ mode: 'edit', machine: m }) }
-  function openDelete(m)    { setModal({ mode: 'delete', machine: m }) }
-  function closeModal()     { setModal(null) }
+  async function refreshMachinesAndStats() {
+    const machinesRes = await fetch(`${apiUrl}/api/machines`)
+    const machinesData = await machinesRes.json()
+    const transformed = machinesData.machines.map(m => ({
+      id: m.machine_id,
+      name: m.machine_name,
+      location: m.location,
+      type: m.machine_name.toLowerCase().includes('dryer') ? 'dryer' : 'washer',
+      status: m.status,
+      progress: m.status === 'in_use' ? 28 : 0,
+      timeLeft: m.status === 'in_use' ? 22 : null,
+      cycles: m.capacity_cycles || 0,
+    }))
+    setMachines(transformed)
+    if (refreshStats) await refreshStats()
+  }
 
-  function handleSave(data) {
-    if (modal.mode === 'add') {
-      const newM = { ...data, id: String(Date.now()), progress: 0, timeLeft: null }
-      setMachines(prev => [...prev, newM])
-      showToast(`${data.name} added successfully`, 'success')
-    } else {
-      setMachines(prev => prev.map(m => m.id === data.id ? { ...m, ...data } : m))
-      showToast(`${data.name} updated`, 'success')
+  async function handleSave(data) {
+    const token = await getToken()
+    try {
+      if (modal.mode === 'add') {
+        const payload = {
+          machine_name: data.name,
+          location: data.location,
+          floor: 0,
+          capacity_cycles: data.cycles || 1,
+          status: data.status,
+        }
+        await fetch(`${apiUrl}/api/admin/machines`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+      } else {
+        const payload = {
+          machine_name: data.name,
+          location: data.location,
+          capacity_cycles: data.cycles || 1,
+          status: data.status,
+        }
+        await fetch(`${apiUrl}/api/admin/machines/${data.id}`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+      }
+      await refreshMachinesAndStats()
+      showToast(`${modal.mode === 'add' ? 'Added' : 'Updated'} ${data.name}`, 'success')
+    } catch (err) {
+      console.error(err)
+      showToast(`Error: ${err.message}`, 'warning')
+    } finally {
+      setModal(null)
     }
-    closeModal()
   }
 
-  function handleDelete() {
-    const name = modal.machine.name
-    setMachines(prev => prev.filter(m => m.id !== modal.machine.id))
-    showToast(`${name} removed`, 'delete')
-    closeModal()
+  async function handleDelete() {
+    const token = await getToken()
+    try {
+      await fetch(`${apiUrl}/api/admin/machines/${modal.machine.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      await refreshMachinesAndStats()
+      showToast(`${modal.machine.name} removed`, 'delete')
+    } catch (err) {
+      console.error(err)
+      showToast(`Cannot delete: ${err.message}`, 'warning')
+    } finally {
+      setModal(null)
+    }
   }
 
-  function setStatus(id, status) {
-    setMachines(prev => prev.map(m => m.id === id ? { ...m, status } : m))
-    showToast(`Status updated to ${M_STATUS[status]?.label ?? status}`, 'success')
+  async function setStatus(id, newStatus) {
+    const token = await getToken()
+    try {
+      await fetch(`${apiUrl}/api/machines/${id}/status`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      })
+      await refreshMachinesAndStats()
+      showToast(`Status updated to ${M_STATUS[newStatus]?.label ?? newStatus}`, 'success')
+    } catch (err) {
+      console.error(err)
+      showToast(`Error: ${err.message}`, 'warning')
+    }
   }
+
+  function openAdd() { setModal({ mode: 'add', machine: null }) }
+  function openEdit(m) { setModal({ mode: 'edit', machine: m }) }
+  function openDelete(m) { setModal({ mode: 'delete', machine: m }) }
+  function closeModal() { setModal(null) }
 
   return (
     <>
       <section>
-        {/* Header row */}
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <div>
             <h2 className="font-display font-700 text-[#1E3448] text-lg">Machine Management</h2>
@@ -402,7 +436,6 @@ function MachinesSection({ machines, setMachines, showToast }) {
           </button>
         </div>
 
-        {/* Search + filter toolbar */}
         <div className="flex items-center gap-3 mb-4 flex-wrap">
           <div className="relative flex-1 min-w-48">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7A96A0]" width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -433,7 +466,6 @@ function MachinesSection({ machines, setMachines, showToast }) {
           </div>
         </div>
 
-        {/* Grid */}
         {filtered.length === 0 ? (
           <div className="bg-white rounded-2xl border border-[#E2EEED] py-16 text-center">
             <div className="text-4xl mb-3">🔍</div>
@@ -453,7 +485,6 @@ function MachinesSection({ machines, setMachines, showToast }) {
                   className="bg-white rounded-2xl p-5 border hover:shadow-sm transition-shadow group"
                   style={{ borderColor: cfg.border }}>
                   <div className="flex items-start justify-between gap-4">
-                    {/* Left */}
                     <div className="flex items-start gap-3 min-w-0">
                       <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                         style={{ background: `${cfg.dot}18` }}>
@@ -478,11 +509,8 @@ function MachinesSection({ machines, setMachines, showToast }) {
                       </div>
                     </div>
 
-                    {/* Right — CRUD actions */}
                     <div className="flex flex-col items-end gap-2.5 shrink-0">
                       <StatusBadge status={m.status} config={M_STATUS}/>
-
-                      {/* Status quick-toggle */}
                       <div className="flex gap-1.5">
                         <button
                           onClick={() => setStatus(m.id, 'available')}
@@ -499,8 +527,6 @@ function MachinesSection({ machines, setMachines, showToast }) {
                           🔧
                         </button>
                       </div>
-
-                      {/* Edit / Delete */}
                       <div className="flex gap-1.5">
                         <button
                           onClick={() => openEdit(m)}
@@ -531,7 +557,6 @@ function MachinesSection({ machines, setMachines, showToast }) {
         )}
       </section>
 
-      {/* Modals */}
       {modal?.mode === 'add' && (
         <MachineModal machine={null} onSave={handleSave} onClose={closeModal}/>
       )}
@@ -545,17 +570,45 @@ function MachinesSection({ machines, setMachines, showToast }) {
   )
 }
 
-// ─── Section: Bookings table ──────────────────────────────────────────────────
-function BookingsSection({ bookings, setBookings, showToast }) {
+// ─── Section: Bookings table (self-contained with useAuth) ────────────────────
+function BookingsSection({ bookings, setBookings, showToast, apiUrl, refreshStats }) {
+  const { getToken } = useAuth()
   const [statusFilter, setStatusFilter] = useState('all')
-
   const filtered = statusFilter === 'all'
     ? bookings
     : bookings.filter(b => b.status === statusFilter)
 
-  function cancelBooking(id) {
-    setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'cancelled' } : b))
-    showToast('Booking cancelled', 'warning')
+  async function refreshBookingsAndStats() {
+    const token = await getToken()
+    const res = await fetch(`${apiUrl}/api/admin/bookings`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    const data = await res.json()
+    const formatted = data.bookings.map(b => ({
+      id: b.id,
+      user: b.user,
+      machine: b.machine,
+      time: new Date(b.scheduled_start).toLocaleString(),
+      status: b.status,
+      cycleType: b.cycle_type || 'normal'
+    }))
+    setBookings(formatted)
+    if (refreshStats) await refreshStats()
+  }
+
+  async function cancelBooking(id) {
+    const token = await getToken()
+    try {
+      await fetch(`${apiUrl}/api/bookings/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      await refreshBookingsAndStats()
+      showToast('Booking cancelled', 'warning')
+    } catch (err) {
+      console.error(err)
+      showToast(`Error: ${err.message}`, 'warning')
+    }
   }
 
   function exportCSV() {
@@ -576,7 +629,6 @@ function BookingsSection({ bookings, setBookings, showToast }) {
   return (
     <section>
       <div className="bg-white rounded-2xl border border-[#E2EEED] overflow-hidden">
-        {/* Toolbar */}
         <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-[#E2EEED] flex-wrap">
           <h2 className="font-display font-700 text-[#1E3448] text-base">All Bookings</h2>
           <div className="flex items-center gap-3 flex-wrap">
@@ -616,7 +668,7 @@ function BookingsSection({ bookings, setBookings, showToast }) {
                 return (
                   <tr key={b.id} className="border-t border-[#E2EEED] hover:bg-[#F0F7F7] transition-colors">
                     <td className="px-4 py-3.5">
-                      <span className="text-xs font-700" style={{ color: TEAL }}>{b.id}</span>
+                      <span className="text-xs font-700" style={{ color: TEAL }}>{b.id.slice(0,8)}</span>
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-2">
@@ -672,9 +724,18 @@ function BookingsSection({ bookings, setBookings, showToast }) {
   )
 }
 
-// ─── Section: Usage chart ─────────────────────────────────────────────────────
-function ChartSection() {
-  const maxVal = Math.max(...mockChartData.map(d => d.bookings))
+// ─── Section: Usage chart (real data) ─────────────────────────────────────────
+function ChartSection({ chartData }) {
+  if (!chartData || chartData.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border border-[#E2EEED] p-6 animate-pulse">
+        <div className="h-6 bg-gray-200 rounded w-1/4 mb-4"></div>
+        <div className="h-40 bg-gray-100 rounded"></div>
+      </div>
+    )
+  }
+
+  const maxVal = Math.max(...chartData.map(d => d.count))
 
   function CustomTooltip({ active, payload, label }) {
     if (!active || !payload?.length) return null
@@ -703,14 +764,14 @@ function ChartSection() {
         </div>
       </div>
       <ResponsiveContainer width="100%" height={200}>
-        <BarChart data={mockChartData} barSize={28} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+        <BarChart data={chartData} barSize={28} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#E2EEED" vertical={false}/>
           <XAxis dataKey="hour" tick={{ fontSize: 10, fill: MUTED }} axisLine={false} tickLine={false}/>
           <YAxis tick={{ fontSize: 10, fill: MUTED }} axisLine={false} tickLine={false} allowDecimals={false}/>
           <Tooltip content={<CustomTooltip />} cursor={{ fill: '#E0FAF9', radius: 6 }}/>
-          <Bar dataKey="bookings" radius={[6, 6, 0, 0]}>
-            {mockChartData.map((entry, i) => (
-              <Cell key={i} fill={entry.bookings === maxVal ? '#09A8A3' : TEAL} opacity={entry.bookings === maxVal ? 1 : 0.75}/>
+          <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+            {chartData.map((entry, i) => (
+              <Cell key={i} fill={entry.count === maxVal ? '#09A8A3' : TEAL} opacity={entry.count === maxVal ? 1 : 0.75}/>
             ))}
           </Bar>
         </BarChart>
@@ -719,7 +780,7 @@ function ChartSection() {
         <span className="w-1.5 h-1.5 rounded-full" style={{ background: TEAL }}/>
         Peak hour:
         <strong className="ml-1" style={{ color: TEAL }}>
-          {mockChartData.find(d => d.bookings === maxVal)?.hour} · {maxVal} bookings
+          {chartData.find(d => d.count === maxVal)?.hour} · {maxVal} bookings
         </strong>
       </div>
     </section>
@@ -728,19 +789,88 @@ function ChartSection() {
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 export default function AdminDashboard() {
-  const [machines, setMachines] = useState(INITIAL_MACHINES)
-  const [bookings, setBookings] = useState(INITIAL_BOOKINGS)
-  const [toast, setToast]       = useState(null)
+  const { getToken } = useAuth()
+  const [stats, setStats] = useState(null)
+  const [bookings, setBookings] = useState([])
+  const [chartData, setChartData] = useState([])
+  const [machines, setMachines] = useState([])
+  const [toast, setToast] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
-  function showToast(msg, type = 'success') {
-    setToast({ msg, type })
+  async function refreshStats() {
+    try {
+      const token = await getToken()
+      const res = await fetch(`${apiUrl}/api/admin/stats`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) setStats(await res.json())
+    } catch (err) { console.error(err) }
+  }
+
+  async function fetchAllData() {
+    setLoading(true)
+    try {
+      const token = await getToken()
+      const [statsRes, bookingsRes, chartRes, machinesRes] = await Promise.all([
+        fetch(`${apiUrl}/api/admin/stats`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${apiUrl}/api/admin/bookings`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${apiUrl}/api/admin/charts/bookings-per-hour`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${apiUrl}/api/machines`)
+      ])
+      if (statsRes.ok) setStats(await statsRes.json())
+      if (bookingsRes.ok) {
+        const data = await bookingsRes.json()
+        setBookings(data.bookings.map(b => ({
+          id: b.id,
+          user: b.user,
+          machine: b.machine,
+          time: new Date(b.scheduled_start).toLocaleString(),
+          status: b.status,
+          cycleType: b.cycle_type || 'normal'
+        })))
+      }
+      if (chartRes.ok) {
+        const data = await chartRes.json()
+        setChartData(data.chartData)
+      }
+      if (machinesRes.ok) {
+        const data = await machinesRes.json()
+        setMachines(data.machines.map(m => ({
+          id: m.machine_id,
+          name: m.machine_name,
+          location: m.location,
+          type: m.machine_name.toLowerCase().includes('dryer') ? 'dryer' : 'washer',
+          status: m.status,
+          progress: m.status === 'in_use' ? 28 : 0,
+          timeLeft: m.status === 'in_use' ? 22 : null,
+          cycles: m.capacity_cycles || 0,
+        })))
+      }
+    } catch (err) {
+      console.error(err)
+      showToast('Failed to load data', 'warning')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchAllData() }, [])
+
+  function showToast(msg, type = 'success') { setToast({ msg, type }) }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500"></div>
+      </div>
+    )
   }
 
   const inUse = machines.filter(m => m.status === 'in_use').length
 
   return (
     <div>
-      {/* Page header */}
       <div style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${SLATE} 100%)` }} className="text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="flex items-start justify-between flex-wrap gap-4">
@@ -766,12 +896,23 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        <StatsSection machines={machines}/>
-        <MachinesSection machines={machines} setMachines={setMachines} showToast={showToast}/>
-        <ChartSection/>
-        <BookingsSection bookings={bookings} setBookings={setBookings} showToast={showToast}/>
+        <StatsSection stats={stats}/>
+        <MachinesSection
+          machines={machines}
+          setMachines={setMachines}
+          showToast={showToast}
+          apiUrl={apiUrl}
+          refreshStats={refreshStats}
+        />
+        <ChartSection chartData={chartData}/>
+        <BookingsSection
+          bookings={bookings}
+          setBookings={setBookings}
+          showToast={showToast}
+          apiUrl={apiUrl}
+          refreshStats={refreshStats}
+        />
       </div>
 
       {toast && <Toast message={toast.msg} type={toast.type} onDone={() => setToast(null)}/>}
