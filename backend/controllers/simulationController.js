@@ -1,4 +1,5 @@
 const { supabase } = require('../config/supabase');
+const { sendCompletionNotification, sendAvailabilityNotification } = require('../services/emailService');
 
 // Start a machine by booking_id
 const startMachine = async (req, res) => {
@@ -35,6 +36,33 @@ const startMachine = async (req, res) => {
         // Complete cycle
         await supabase.from('machines').update({ status: 'available' }).eq('machine_id', booking.machine_id);
         await supabase.from('bookings').update({ status: 'completed', completed_at: new Date() }).eq('booking_id', booking_id);
+        
+        // Send completion email to user (async, don't wait)
+        const { data: user } = await supabase.from('users').select('email').eq('user_id', booking.user_id).single();
+        if (user?.email) {
+          sendCompletionNotification(user.email, booking.machine_id, booking.machines.machine_name).catch(err => {
+            console.error('Failed to send completion email:', err);
+          });
+        }
+
+        // Send availability notification to users with pending bookings for this machine
+        const { data: pendingBookings } = await supabase
+          .from('bookings')
+          .select('users(email)')
+          .eq('machine_id', booking.machine_id)
+          .eq('status', 'pending')
+          .limit(5); // Notify up to 5 users
+
+        if (pendingBookings?.length) {
+          pendingBookings.forEach(pendingBooking => {
+            if (pendingBooking.users?.email) {
+              sendAvailabilityNotification(pendingBooking.users.email, booking.machines.machine_name).catch(err => {
+                console.error('Failed to send availability email:', err);
+              });
+            }
+          });
+        }
+
         clearInterval(timer);
         return;
       }

@@ -1,4 +1,5 @@
 const { supabase } = require('../config/supabase');
+const { sendBookingConfirmation } = require('../services/emailService');
 
 // GET /api/bookings - get current user's bookings (or all if admin)
 const getUserBookings = async (req, res) => {
@@ -47,7 +48,7 @@ const createBooking = async (req, res) => {
 
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('user_id')
+      .select('user_id, email')
       .eq('clerk_id', clerkId)
       .single();
     if (userError || !user) {
@@ -67,7 +68,7 @@ const createBooking = async (req, res) => {
 
     const { data: machine, error: machineError } = await supabase
       .from('machines')
-      .select('status')
+      .select('status, machine_name')
       .eq('machine_id', machine_id)
       .single();
     if (machineError || !machine) return res.status(404).json({ error: 'Machine not found' });
@@ -101,6 +102,13 @@ const createBooking = async (req, res) => {
       .select()
       .single();
     if (insertError) throw insertError;
+
+    // Send booking confirmation email (async, don't wait)
+    if (user.email) {
+      sendBookingConfirmation(user.email, machine.machine_name, startTime.toISOString(), duration_minutes).catch(err => {
+        console.error('Failed to send booking email:', err);
+      });
+    }
 
     res.status(201).json({ booking: newBooking });
   } catch (err) {

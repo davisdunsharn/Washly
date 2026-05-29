@@ -258,7 +258,7 @@ export default function DashboardPage() {
             status: m.status,
             progress: m.status === 'in_use' ? 28 : 0,
             timeLeft: m.status === 'in_use' ? 22 : null,
-            cycles: m.capacity_cycles || 0,   // 🔥 FIXED: no random numbers
+            cycles: m.capacity_cycles || 0,
           }))
           setMachines(formatted)
         }
@@ -268,6 +268,61 @@ export default function DashboardPage() {
     }
     loadMachines()
   }, [apiUrl])  // runs only once on mount
+
+  // Refresh machine data every 5 seconds with real sensor data
+  useEffect(() => {
+    const refreshMachines = async () => {
+      try {
+        const res = await fetch(`${apiUrl}/api/machines`)
+        if (res.ok) {
+          const data = await res.json()
+          const machines_list = data.machines || []
+          
+          // For each running machine, fetch latest sensor data
+          const updated = await Promise.all(machines_list.map(async m => {
+            const machine = {
+              id: m.machine_id,
+              name: m.machine_name,
+              room: m.location,
+              location: m.location,
+              status: m.status,
+              progress: 0,
+              timeLeft: null,
+              cycles: m.capacity_cycles || 0,
+            }
+            
+            if (m.status === 'in_use') {
+              try {
+                const sensorRes = await fetch(`${apiUrl}/api/sensors/${m.machine_id}/latest`)
+                if (sensorRes.ok) {
+                  const sensorData = await sensorRes.json()
+                  const sensor = sensorData.latest_reading
+                  if (sensor?.cycle_progress_pct !== undefined) {
+                    const progress = Math.round(sensor.cycle_progress_pct)
+                    const remainingPercent = 100 - progress
+                    const timeLeft = Math.max(0, Math.round((remainingPercent / 100) * 45))
+                    machine.progress = progress
+                    machine.timeLeft = timeLeft
+                  }
+                }
+              } catch (err) {
+                // Keep default values
+              }
+            }
+            return machine
+          }))
+          
+          setMachines(updated)
+        }
+      } catch (err) {
+        // Silent fail
+      }
+    }
+    
+    refreshMachines()
+    const interval = setInterval(refreshMachines, 5000) // Refresh every 5 seconds
+    return () => clearInterval(interval)
+  }, [apiUrl])
 
   // Real-time subscription (only if Supabase is configured)
   useEffect(() => {
