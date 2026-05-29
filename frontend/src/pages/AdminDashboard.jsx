@@ -295,15 +295,19 @@ function StatsSection({ stats }) {
   ]
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
       {cards.map(({ label, value, sub, color, icon }) => (
-        <div key={label} className="bg-white rounded-2xl border border-[#E2EEED] p-5 animate-slide-in">
-          <div className="flex items-start justify-between mb-3">
-            <p className="text-xs font-medium text-[#7A96A0] uppercase tracking-widest">{label}</p>
-            <span className="text-xl">{icon}</span>
+        <div key={label} className="bg-white rounded-[28px] border border-[#E2EEED] p-6 shadow-sm animate-slide-in">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7A96A0]">{label}</p>
+              <p className="font-display font-700 text-3xl mt-3" style={{ color }}>{value}</p>
+            </div>
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F0F7F7] text-xl">
+              {icon}
+            </div>
           </div>
-          <p className="font-display font-700 text-4xl leading-none" style={{ color }}>{value}</p>
-          {sub && <p className="text-xs text-[#7A96A0] mt-2">{sub}</p>}
+          {sub && <p className="text-sm text-[#7A96A0]">{sub}</p>}
         </div>
       ))}
     </div>
@@ -421,13 +425,13 @@ function MachinesSection({ machines, setMachines, showToast, apiUrl, refreshStat
   return (
     <>
       <section>
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
           <div>
-            <h2 className="font-display font-700 text-[#1E3448] text-lg">Machine Management</h2>
-            <p className="text-xs text-[#7A96A0] mt-0.5">{machines.length} machines total · {filtered.length} shown</p>
+            <h2 className="font-display font-700 text-[#1E3448] text-xl">Machine Management</h2>
+            <p className="text-sm text-[#7A96A0] mt-1">{machines.length} machines total · {filtered.length} shown</p>
           </div>
           <button onClick={openAdd}
-            className="flex items-center gap-2 text-sm font-medium text-white px-4 py-2 rounded-xl shadow-sm transition-all hover:opacity-90 active:scale-95"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-white px-5 py-3 rounded-full shadow-sm transition duration-200 hover:opacity-95 active:scale-[0.98]"
             style={{ background: TEAL }}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M7 1v12M1 7h12" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
@@ -436,20 +440,20 @@ function MachinesSection({ machines, setMachines, showToast, apiUrl, refreshStat
           </button>
         </div>
 
-        <div className="flex items-center gap-3 mb-4 flex-wrap">
-          <div className="relative flex-1 min-w-48">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7A96A0]" width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative flex-1 min-w-0">
+            <svg className="absolute left-4 top-1/2 -translate-y-1/2 text-[#7A96A0]" width="14" height="14" viewBox="0 0 14 14" fill="none">
               <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.3"/>
               <path d="M9.5 9.5l2.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
             </svg>
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search by name or location…"
-              className="w-full text-sm pl-9 pr-4 py-2 rounded-xl border border-[#E2EEED] bg-white focus:border-[#0ABAB5] outline-none transition-all"
+              placeholder="Search by name or location..."
+              className="w-full text-sm pl-11 pr-4 py-3 rounded-full border border-[#E2EEED] bg-[#F8FBFB] focus:border-[#0ABAB5] focus:bg-white outline-none transition-all"
             />
           </div>
-          <div className="flex gap-1 bg-[#F0F7F7] rounded-xl p-1">
+          <div className="flex flex-wrap items-center gap-2">
             {[
               { key: 'all', label: 'All' },
               { key: 'available', label: 'Available' },
@@ -457,8 +461,8 @@ function MachinesSection({ machines, setMachines, showToast, apiUrl, refreshStat
               { key: 'maintenance', label: 'Maintenance' },
             ].map(({ key, label }) => (
               <button key={key} onClick={() => setFilter(key)}
-                className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-all ${
-                  filter === key ? 'bg-[#0ABAB5] text-white shadow-sm' : 'text-[#7A96A0] hover:text-[#1E3448]'
+                className={`text-xs font-medium px-3.5 py-2 rounded-full transition-all ${
+                  filter === key ? 'bg-[#0ABAB5] text-white shadow-sm' : 'text-[#7A96A0] bg-white border border-[#E2EEED] hover:border-[#0ABAB5] hover:text-[#0ABAB5]'
                 }`}>
                 {label}
               </button>
@@ -482,7 +486,7 @@ function MachinesSection({ machines, setMachines, showToast, apiUrl, refreshStat
               const isInUse = m.status === 'in_use'
               return (
                 <div key={m.id}
-                  className="bg-white rounded-2xl p-5 border hover:shadow-sm transition-shadow group"
+                  className="bg-white rounded-[28px] p-6 border border-transparent shadow-sm hover:shadow-md transition-shadow group"
                   style={{ borderColor: cfg.border }}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3 min-w-0">
@@ -870,25 +874,29 @@ export default function AdminDashboard() {
   const inUse = machines.filter(m => m.status === 'in_use').length
 
   return (
-    <div>
-      <div style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${SLATE} 100%)` }} className="text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex items-start justify-between flex-wrap gap-4">
-            <div>
-              <p className="text-[#5CD8D4] text-xs font-700 uppercase tracking-widest mb-1">Admin Console</p>
-              <h1 className="font-display font-700 text-3xl">Overview</h1>
-              <p className="text-white/50 text-sm mt-1">Stats · Machines · Bookings · Analytics</p>
+    <div className="font-sans">
+      <div className="relative overflow-hidden text-white">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(10,186,181,0.22),transparent_32%)]" />
+        <div className="relative" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${SLATE} 100%)` }}>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="max-w-2xl">
+                <p className="text-[#5CD8D4] text-xs font-700 uppercase tracking-widest mb-2">Overview</p>
+                <h1 className="font-display font-700 text-4xl sm:text-5xl">Admin Dashboard</h1>
+                <p className="text-white/70 text-sm sm:text-base mt-3">Overview · Analytics</p>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
+
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
               {[
                 { v: machines.filter(m => m.status === 'available').length,   l: 'Available',   c: GREEN },
                 { v: inUse,                                                    l: 'In Use',      c: TEAL  },
                 { v: machines.filter(m => m.status === 'maintenance').length, l: 'Maintenance', c: AMBER },
               ].map(({ v, l, c }) => (
-                <div key={l} className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
-                  style={{ background: `${c}18`, border: `1px solid ${c}30` }}>
-                  <span className="w-2 h-2 rounded-full" style={{ background: c }}/>
-                  <span className="text-sm font-medium" style={{ color: c }}>{v} {l}</span>
+                <div key={l} className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium"
+                  style={{ background: `${c}18`, color: c, border: `1px solid ${c}30` }}>
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: c }}/>
+                  {v} {l}
                 </div>
               ))}
             </div>

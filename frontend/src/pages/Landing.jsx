@@ -1,4 +1,4 @@
-import { SignInButton, SignUpButton, SignedIn, SignedOut } from '@clerk/clerk-react'
+import { SignInButton, SignUpButton, SignedIn, SignedOut, useUser } from '@clerk/clerk-react'
 import { useNavigate } from 'react-router-dom'
 import { useEffect } from 'react'
 
@@ -179,8 +179,13 @@ export default function LandingPage() {
 // Separate component so navigate() is called from a component that only mounts
 // when the user IS signed in — satisfies React Router's rule.
 function RedirectToDashboard({ navigate }) {
+  const { user } = useUser()
+
   useEffect(() => {
-    navigate('/dashboard', { replace: true })
-  }, [navigate])
+    if (!user) return
+    const destination = user?.publicMetadata?.role === 'admin' ? '/admin' : '/dashboard'
+    navigate(destination, { replace: true })
+  }, [navigate, user])
+
   return null
 }

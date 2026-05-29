@@ -28,7 +28,7 @@ function AdminNavbar() {
   return (
     <nav className="sticky top-0 z-40 border-b border-[#1E3448] bg-[#0D1B2A]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-14">
+        <div className="relative flex items-center h-14">
 
           {/* Logo */}
           <Link to="/admin" className="flex items-center gap-2.5 shrink-0">
@@ -49,19 +49,20 @@ function AdminNavbar() {
             </span>
           </Link>
 
-          {/* Admin nav links */}
-          <div className="hidden sm:flex items-center gap-1">
-            <AdminNavLink to="/admin" icon="📊">Overview</AdminNavLink>
-            <AdminNavLink to="/admin/machines" icon="🫧">Machines</AdminNavLink>
-            <AdminNavLink to="/admin/bookings" icon="📅">Bookings</AdminNavLink>
+          <div className="absolute inset-x-0 flex justify-center pointer-events-none">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/15 bg-white/10 text-sm font-semibold text-white shadow-sm backdrop-blur-sm">
+              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-[#0ABAB5]/15 text-[#0ABAB5]">📊</span>
+              Admin Console
+            </div>
           </div>
 
-          {/* Sign out */}
-          <SignOutButton>
-            <button className="text-xs font-medium text-white bg-red-500/80 hover:bg-red-500 px-3 py-1.5 rounded-lg transition-colors">
-              Sign out
-            </button>
-          </SignOutButton>
+          <div className="ml-auto">
+            <SignOutButton>
+              <button className="text-xs font-medium text-white bg-red-500/80 hover:bg-red-500 px-3 py-1.5 rounded-lg transition-colors">
+                Sign out
+              </button>
+            </SignOutButton>
+          </div>
         </div>
       </div>
     </nav>

@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { useAuth } from '@clerk/clerk-react'
+import { useAuth, useUser } from '@clerk/clerk-react'
 import Navbar from './components/Navbar.jsx'
 import Chatbot from './components/Chatbot.jsx'
 import ProtectedAdminRoute from './components/ProtectedAdminRoute.jsx'
@@ -8,6 +8,7 @@ import DashboardPage from './pages/Dashboard.jsx'
 import MachinesPage from './pages/Machines.jsx'
 import BookingsPage from './pages/Bookings.jsx'
 import AdminDashboardPage from './pages/AdminDashboard.jsx'
+import { isAdmin } from './utils/isAdmin.js'
 
 function ProtectedLayout({ children }) {
   const { isLoaded, isSignedIn } = useAuth()
@@ -22,12 +23,19 @@ function ProtectedLayout({ children }) {
   )
 }
 
+function AdminRedirector({ children }) {
+  const { user } = useUser()
+  if (!user) return children
+  if (isAdmin(user)) return <Navigate to="/admin" replace />
+  return children
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/dashboard" element={<ProtectedLayout><DashboardPage /></ProtectedLayout>} />
+        <Route path="/dashboard" element={<ProtectedLayout><AdminRedirector><DashboardPage /></AdminRedirector></ProtectedLayout>} />
         <Route path="/machines" element={<ProtectedLayout><MachinesPage /></ProtectedLayout>} />
         <Route path="/bookings" element={<ProtectedLayout><BookingsPage /></ProtectedLayout>} />
         <Route
