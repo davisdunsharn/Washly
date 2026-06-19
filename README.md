@@ -198,6 +198,11 @@ This project uses only free or open-source tools. No credit card required beyond
 
 Full flow must complete in under 15 minutes.
 
+## Deployment & Backups
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for Vercel setup (frontend + backend) and the
+automated Supabase database backup workflow (`.github/workflows/backup.yml`).
+
 ## License
 
 MIT

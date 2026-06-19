@@ -4,13 +4,27 @@ require('dotenv').config();
 
 const app = express();
 
-// CORS - allow your frontend on any localhost port
+// CORS - allow localhost (any port), explicitly configured frontends, and
+// Vercel deployments (production + preview *.vercel.app domains).
+const allowedOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, etc.)
+    // Allow requests with no origin (curl, server-to-server, mobile apps)
     if (!origin) return callback(null, true);
-    // Allow localhost on any port
-    if (origin.startsWith('http://localhost:')) return callback(null, true);
+    // Local development on any port
+    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      return callback(null, true);
+    }
+    // Explicitly allow-listed frontend URLs (FRONTEND_URL, comma-separated)
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Any Vercel deployment of this project
+    try {
+      if (new URL(origin).hostname.endsWith('.vercel.app')) return callback(null, true);
+    } catch { /* malformed origin */ }
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true
@@ -66,7 +80,15 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Washly backend running on http://localhost:${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV}`);
-});
+
+// Only start a long-running server when executed directly (local dev / a Node
+// host). On Vercel the file is imported as a serverless function, so we just
+// export the Express app instead of calling listen().
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Washly backend running on http://localhost:${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV}`);
+  });
+}
+
+module.exports = app;
