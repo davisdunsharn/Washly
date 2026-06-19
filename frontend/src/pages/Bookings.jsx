@@ -12,6 +12,7 @@ export default function BookingsPage() {
   const { getToken } = useAuth()
   const [bookings, setBookings] = useState([])
   const [filter, setFilter] = useState('all')
+  const [sort, setSort] = useState('newest')
   const [cancelId, setCancelId] = useState(null)
   const [toast, setToast] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -34,6 +35,7 @@ export default function BookingsPage() {
         userEmail: b.users?.email,
         machine: b.machines?.machine_name || 'Unknown',
         block: b.machines?.location || 'Unknown',
+        rawStart: b.scheduled_start || null,
         date: b.scheduled_start ? new Date(b.scheduled_start).toLocaleDateString() : 'Unknown',
         time: b.scheduled_start ? new Date(b.scheduled_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Unknown',
         status: b.status === 'pending' ? 'upcoming' : (b.status === 'active' ? 'active' : (b.status === 'completed' ? 'complete' : 'cancelled')),
@@ -60,12 +62,15 @@ export default function BookingsPage() {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       })
-      if (!res.ok) throw new Error('Cancel failed')
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}))
+        throw new Error(error || 'Cancel failed')
+      }
       showToast('Booking cancelled')
       await fetchBookings()
     } catch (err) {
       console.error(err)
-      showToast('Failed to cancel booking')
+      showToast(err.message || 'Failed to cancel booking')
     } finally {
       setCancelId(null)
     }
@@ -79,7 +84,14 @@ export default function BookingsPage() {
     cancelled: bookings.filter(b => b.status === 'cancelled').length,
   }
 
-  const filtered = filter === 'all' ? bookings : bookings.filter(b => b.status === filter)
+  const base = filter === 'all' ? bookings : bookings.filter(b => b.status === filter)
+  const filtered = [...base].sort((a, b) => {
+    switch (sort) {
+      case 'oldest':  return new Date(a.rawStart || 0) - new Date(b.rawStart || 0)
+      case 'machine': return (a.machine || '').localeCompare(b.machine || '')
+      default:        return new Date(b.rawStart || 0) - new Date(a.rawStart || 0) // newest
+    }
+  })
 
   if (loading) return <div className="p-8 text-center">Loading bookings...</div>
 
@@ -107,14 +119,27 @@ export default function BookingsPage() {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex gap-1.5 bg-white rounded-xl p-1 border border-[#E2EEED] mb-6 w-fit">
-          {['all','active','upcoming','complete','cancelled'].map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-all ${filter === f ? 'bg-[#0ABAB5] text-white' : 'text-[#7A96A0] hover:text-[#1E3448]'}`}>
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-              <span className="ml-1.5 opacity-60">({counts[f]})</span>
-            </button>
-          ))}
+        <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
+          <div className="flex gap-1.5 bg-white rounded-xl p-1 border border-[#E2EEED] w-fit">
+            {['all','active','upcoming','complete','cancelled'].map(f => (
+              <button key={f} onClick={() => setFilter(f)}
+                className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-all ${filter === f ? 'bg-[#0ABAB5] text-white' : 'text-[#7A96A0] hover:text-[#1E3448]'}`}>
+                {f.charAt(0).toUpperCase() + f.slice(1)}
+                <span className="ml-1.5 opacity-60">({counts[f]})</span>
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-700 uppercase tracking-widest text-[#7A96A0]">Sort</span>
+            <select
+              value={sort}
+              onChange={e => setSort(e.target.value)}
+              className="text-xs font-medium border border-[#E2EEED] bg-white rounded-lg px-3 py-1.5 text-[#1E3448] focus:outline-none focus:border-[#0ABAB5] cursor-pointer">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="machine">Machine name</option>
+            </select>
+          </div>
         </div>
 
         <div className="space-y-3">
@@ -157,7 +182,7 @@ export default function BookingsPage() {
                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.dot }}/>
                       {s.label}
                     </span>
-                    {(b.status === 'upcoming' || b.status === 'active') && (
+                    {b.status === 'upcoming' && (
                       <button onClick={() => setCancelId(b.id)} className="text-xs text-red-400 hover:text-red-600">Cancel</button>
                     )}
                   </div>

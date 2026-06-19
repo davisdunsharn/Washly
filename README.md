@@ -17,7 +17,7 @@ Built for the **MUT Capstone Project** integrating DS3, IS3, and IP2 modules.
 - Node.js + Express (REST API)
 - Supabase PostgreSQL (database)
 - Clerk (JWT validation)
-- Groq AI (laundry time suggestions)
+- Groq AI — Llama 3.1 (laundry recommendations & tips)
 - SendGrid (email notifications)
 
 
@@ -68,6 +68,11 @@ App runs on `http://localhost:5173`
 - `GROQ_API_KEY` — Groq AI API key
 - `SENDGRID_API_KEY` — SendGrid API key
 - `FRONTEND_URL` — Frontend URL for CORS (default: http://localhost:5173)
+- `DEMO_CYCLE_SECONDS` — How long a simulated wash cycle runs end-to-end (default: 120). Lower it for a faster live demo; set to `2700` for a true 45-minute cycle.
+
+### Database Migrations
+
+Run the SQL in `backend/db/migrations/` once against the Supabase project (SQL editor) before first use. `001_soft_delete_machines.sql` adds the soft-delete columns so deactivating a machine keeps its history instead of erasing it.
 
 ### Frontend (.env)
 - `VITE_CLERK_PUBLISHABLE_KEY` — Clerk publishable key
@@ -106,10 +111,10 @@ washly/
 ## Key Features
 
 - **Digital Booking** — Students book machines online, no physical queue
-- **Real-Time Status** — IoT sensors update machine status every 10 seconds
-- **AI Suggestions** — Groq AI suggests optimal booking times based on current load
+- **Real-Time Status** — IoT sensors stream readings every few seconds during a cycle
+- **AI Suggestions** — Groq AI recommends the best available machine for the load
 - **Live Tracking** — Students see laundry progress, temperature, water level
-- **Notifications** — SendGrid email + Vonage SMS when laundry is done
+- **Notifications** — SendGrid email on booking, completion, and machine availability
 - **Admin Dashboard** — View all machines, bookings, sensor data, AI suggestions
 - **Power BI Analytics** — Executive dashboards for usage patterns and peak hours
 
@@ -122,9 +127,15 @@ washly/
 - `POST /api/users/sync` — Sync Clerk user to Supabase on first login
 
 ### Machines
-- `GET /api/machines` — List all machines with current status
+- `GET /api/machines` — List all live machines with current status
 - `GET /api/machines/:id` — Get machine details + latest sensor reading
 - `PATCH /api/machines/:id/status` — Admin: update machine status
+- `POST /api/machines/start` — Start IoT simulation for a booking (demo trigger)
+
+### Admin (machine management)
+- `POST /api/admin/machines` — Add a machine
+- `PUT /api/admin/machines/:id` — Edit a machine
+- `DELETE /api/admin/machines/:id` — Deactivate (soft-delete) a machine — row & history are kept
 
 ### Bookings
 - `GET /api/bookings` — Student: their bookings / Admin: all bookings
@@ -132,26 +143,29 @@ washly/
 - `PUT /api/bookings/:id` — Modify booking (reschedule)
 - `DELETE /api/bookings/:id` — Cancel booking
 
-### Sensors
-- `GET /api/sensors` — Latest reading per machine (admin)
+### Sensors (IoT)
+- `GET /api/sensors` — Latest readings (admin)
 - `GET /api/sensors/:machine_id` — Sensor history (Power BI)
-- `POST /api/sensors/reading` — IoT ingest endpoint (simulated sensor)
-- `POST /api/machines/start` — Start IoT simulation (demo trigger)
+- `GET /api/sensors/:machine_id/latest` — Latest reading for one machine
+- `POST /api/sensors` — IoT ingest endpoint (real sensor or Packet Tracer)
 
 ### AI
-- `POST /api/ai/suggest` — Get laundry time suggestion from Groq
+- `POST /api/ai/recommend` — Recommend the best available machine (Groq)
+- `POST /api/ai/tips` — Laundry care tips (Groq)
 
 ### Notifications
-- `POST /api/notify/complete` — Send completion email + SMS
+- `GET /api/notify` — Upcoming-booking reminders for the current user
+- `POST /api/notify/send` — Admin: queue a notification
+
+> Completion & availability emails are sent automatically by the simulation when a cycle finishes.
 
 ## Development Notes
 
 ### Free-Tier APIs Used
 - **Supabase** — 500 MB storage, unlimited API calls (free tier)
 - **Clerk** — Up to 5,000 monthly active users (free tier)
-- **Groq** — Free access to Mixtral-8x7B model
+- **Groq** — Free access to Llama 3.1 models
 - **SendGrid** — 100 emails/day (free tier)
-- **Vonage SMS** — Free trial credit available
 
 ### No Paid Options
 This project uses only free or open-source tools. No credit card required beyond sign-ups.

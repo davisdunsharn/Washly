@@ -10,8 +10,8 @@ const validateBookingInput = (req, res, next) => {
     return res.status(422).json({ error: 'scheduled_start is required' });
   }
 
-  if (!duration_minutes || duration_minutes < 30 || duration_minutes > 180) {
-    return res.status(422).json({ error: 'duration_minutes must be between 30 and 180' });
+  if (!duration_minutes || duration_minutes < 15 || duration_minutes > 180) {
+    return res.status(422).json({ error: 'duration_minutes must be between 15 and 180' });
   }
 
   try {

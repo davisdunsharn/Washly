@@ -72,8 +72,11 @@ const createBooking = async (req, res) => {
       .eq('machine_id', machine_id)
       .single();
     if (machineError || !machine) return res.status(404).json({ error: 'Machine not found' });
-    if (machine.status !== 'available') {
-      return res.status(409).json({ error: `Machine is ${machine.status}, cannot book` });
+    // A currently-running machine can still be reserved for a later slot (the
+    // overlap check below guards the actual time). Only out-of-service machines
+    // are off-limits.
+    if (machine.status === 'maintenance' || machine.status === 'offline') {
+      return res.status(409).json({ error: `Machine is under ${machine.status}, cannot book` });
     }
 
     const startTime = new Date(scheduled_start);

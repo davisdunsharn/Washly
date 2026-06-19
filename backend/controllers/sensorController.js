@@ -29,14 +29,28 @@ const getSensorData = async (req, res) => {
   }
 };
 
-// POST /api/sensors - Record new sensor data (from IoT device)
+// POST /api/sensors - Record new sensor data (from IoT device / Cisco Packet Tracer)
+// Stores the same fields the live simulation and frontend use so a real sensor
+// reading is indistinguishable from a simulated one.
 const recordSensorData = async (req, res) => {
   try {
-    const { machine_id, temperature, humidity, water_level, status } = req.body;
+    const {
+      machine_id,
+      temperature,
+      water_level,
+      running_status,
+      cycle_progress_pct
+    } = req.body;
 
     // Validate required fields
     if (!machine_id) {
       return res.status(400).json({ error: 'Missing required field: machine_id' });
+    }
+
+    // Validate UUID format early so a bad ID doesn't hit the DB
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(machine_id)) {
+      return res.status(400).json({ error: 'Invalid machine ID format' });
     }
 
     // Validate machine exists
@@ -44,10 +58,17 @@ const recordSensorData = async (req, res) => {
       .from('machines')
       .select('machine_id')
       .eq('machine_id', machine_id)
-      .single();
+      .maybeSingle();
 
-    if (machineError || !machine) {
+    if (machineError) throw machineError;
+    if (!machine) {
       return res.status(404).json({ error: 'Machine not found' });
+    }
+
+    // Clamp progress into a sane 0–100 range if provided
+    let progress = null;
+    if (cycle_progress_pct !== undefined && cycle_progress_pct !== null) {
+      progress = Math.max(0, Math.min(100, Math.round(Number(cycle_progress_pct))));
     }
 
     // Insert sensor reading
@@ -55,10 +76,10 @@ const recordSensorData = async (req, res) => {
       .from('sensor_data')
       .insert({
         machine_id,
-        temperature: temperature || null,
-        humidity: humidity || null,
-        water_level: water_level || null,
-        status: status || 'normal',
+        temperature: temperature ?? null,
+        water_level: water_level ?? null,
+        running_status: running_status ?? null,
+        cycle_progress_pct: progress,
         recorded_at: new Date().toISOString()
       })
       .select()

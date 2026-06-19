@@ -18,12 +18,18 @@ const clerkAuth = async (req, res, next) => {
     // Fetch the full user from Clerk because the token might not include publicMetadata.role
     const clerkUser = await users.getUser(decoded.sub);
     const role = clerkUser.publicMetadata?.role || 'student';
-    
+
+    const email = decoded.email || clerkUser.emailAddresses[0]?.emailAddress;
+    // Name is optional at signup — fall back to username, then the email prefix,
+    // so a user is never just shown as "User" in tables/dashboards.
+    const nameFromClerk = `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim();
+    const fullName = nameFromClerk || clerkUser.username || (email ? email.split('@')[0] : 'User');
+
     // Attach the user object so downstream endpoints (like machine status update) know who's calling
     req.user = {
       clerkId: decoded.sub,
-      email: decoded.email || clerkUser.emailAddresses[0]?.emailAddress,
-      fullName: `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || 'User',
+      email,
+      fullName,
       role: role
     };
     

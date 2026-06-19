@@ -5,7 +5,7 @@ import axios from 'axios'
 
 export const createApiClient = (getToken) => {
   const client = axios.create({
-    baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+    baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000',
   })
 
   // Add token to every request
@@ -26,5 +26,5 @@ export const createApiClient = (getToken) => {
 
 // Default axios instance for requests without auth
 export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000',
 })

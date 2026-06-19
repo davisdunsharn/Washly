@@ -34,7 +34,7 @@ const recommendMachine = async (req, res) => {
 
     // Build AI prompt
     const machineList = machines
-      .map(m => `Machine ${m.machine_id}: ${m.machine_name} (Location: ${m.location}, Capacity: ${m.capacity}L)`)
+      .map(m => `Machine ${m.machine_id}: ${m.machine_name} (Location: ${m.location}, Capacity: ${m.capacity_cycles || 1} cycle(s))`)
       .join('\n');
 
     const prompt = `You are a laundry expert. Based on the following available machines and the user's needs, recommend the BEST machine and explain why.
@@ -51,7 +51,7 @@ Provide a brief, friendly recommendation (max 2 sentences). Include the machine 
     // Call Groq AI
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
-      model: 'mixtral-8x7b-32768',
+      model: 'llama-3.1-8b-instant',
       max_tokens: 300
     });
 
@@ -64,7 +64,7 @@ Provide a brief, friendly recommendation (max 2 sentences). Include the machine 
         id: m.machine_id,
         name: m.machine_name,
         location: m.location,
-        capacity: m.capacity
+        capacity_cycles: m.capacity_cycles || 1
       }))
     });
   } catch (err) {
@@ -88,7 +88,7 @@ Keep it brief and actionable (max 150 words).`;
 
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
-      model: 'mixtral-8x7b-32768',
+      model: 'llama-3.1-8b-instant',
       max_tokens: 250
     });
 

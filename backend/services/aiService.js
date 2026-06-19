@@ -25,13 +25,14 @@ Respond in JSON format only:
 }
 `;
 
-    const message = await groq.messages.create({
-      model: 'mixtral-8x7b-32768',
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
       max_tokens: 200,
+      response_format: { type: 'json_object' },
       messages: [{ role: 'user', content: prompt }]
     });
 
-    const responseText = message.content[0].text;
+    const responseText = completion.choices[0]?.message?.content || '{}';
     const suggestion = JSON.parse(responseText);
 
     return suggestion;

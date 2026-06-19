@@ -1,19 +1,43 @@
 const { supabase } = require('../config/supabase');
 
+// Count machines, excluding soft-deleted rows when that column exists.
+async function countMachines(extraFilter) {
+  let q = supabase.from('machines').select('*', { count: 'exact', head: true }).eq('is_deleted', false);
+  if (extraFilter) q = extraFilter(q);
+  let { count, error } = await q;
+  if (error && error.code === '42703') {
+    let q2 = supabase.from('machines').select('*', { count: 'exact', head: true });
+    if (extraFilter) q2 = extraFilter(q2);
+    ({ count } = await q2);
+  }
+  return count || 0;
+}
+
+// True if another live machine already uses this name (case-insensitive).
+// excludeId lets an edit keep its own name.
+async function machineNameExists(name, excludeId) {
+  const target = String(name).trim().toLowerCase();
+  let { data, error } = await supabase
+    .from('machines')
+    .select('machine_id, machine_name')
+    .eq('is_deleted', false);
+  if (error && error.code === '42703') {
+    ({ data } = await supabase.from('machines').select('machine_id, machine_name'));
+  }
+  return (data || []).some(m =>
+    m.machine_id !== excludeId && (m.machine_name || '').trim().toLowerCase() === target
+  );
+}
+
 // GET /api/admin/stats
 const getStats = async (req, res) => {
   try {
-    const { count: totalMachines } = await supabase
-      .from('machines')
-      .select('*', { count: 'exact', head: true });
+    const totalMachines = await countMachines();
+    const inUse = await countMachines(q => q.eq('status', 'in_use'));
     const { count: activeBookings } = await supabase
       .from('bookings')
       .select('*', { count: 'exact', head: true })
       .in('status', ['pending', 'active']);
-    const { count: inUse } = await supabase
-      .from('machines')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'in_use');
 
     const total = totalMachines || 0;
     const utilisation = total ? Math.round((inUse / total) * 100) : 0;
@@ -99,17 +123,21 @@ const createMachine = async (req, res) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     const { machine_name, location, floor, capacity_cycles, status } = req.body;
-    if (!machine_name || !location || floor === undefined) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    if (!machine_name?.trim() || !location?.trim()) {
+      return res.status(400).json({ error: 'Machine name and location are required' });
     }
+    if (await machineNameExists(machine_name)) {
+      return res.status(409).json({ error: `A machine named "${machine_name.trim()}" already exists` });
+    }
+    const validStatuses = ['available', 'in_use', 'maintenance', 'offline'];
     const { data, error } = await supabase
       .from('machines')
       .insert({
-        machine_name,
-        location,
-        floor,
-        capacity_cycles: capacity_cycles || 1,
-        status: status || 'available'
+        machine_name: machine_name.trim(),
+        location: location.trim(),
+        floor: floor ?? '',
+        capacity_cycles: Math.max(1, parseInt(capacity_cycles, 10) || 1),
+        status: validStatuses.includes(status) ? status : 'available'
       })
       .select()
       .single();
@@ -117,6 +145,9 @@ const createMachine = async (req, res) => {
     res.status(201).json({ machine: data });
   } catch (err) {
     console.error('Create machine error:', err);
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'A machine with this name already exists' });
+    }
     res.status(500).json({ error: 'Failed to create machine' });
   }
 };
@@ -126,11 +157,31 @@ const updateMachine = async (req, res) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     const { id } = req.params;
-    const updates = req.body;
-    delete updates.machine_id;
+    const body = req.body || {};
+
+    // Only these fields may be edited via this endpoint (never is_deleted etc.)
+    const updates = { updated_at: new Date().toISOString() };
+    if (body.machine_name !== undefined) {
+      const newName = String(body.machine_name).trim();
+      if (await machineNameExists(newName, id)) {
+        return res.status(409).json({ error: `A machine named "${newName}" already exists` });
+      }
+      updates.machine_name = newName;
+    }
+    if (body.location !== undefined)     updates.location = String(body.location).trim();
+    if (body.floor !== undefined)        updates.floor = body.floor ?? '';
+    if (body.capacity_cycles !== undefined) updates.capacity_cycles = Math.max(1, parseInt(body.capacity_cycles, 10) || 1);
+    if (body.status !== undefined) {
+      const validStatuses = ['available', 'in_use', 'maintenance', 'offline'];
+      if (!validStatuses.includes(body.status)) {
+        return res.status(400).json({ error: 'Invalid status', valid: validStatuses });
+      }
+      updates.status = body.status;
+    }
+
     const { data, error } = await supabase
       .from('machines')
-      .update({ ...updates, updated_at: new Date() })
+      .update(updates)
       .eq('machine_id', id)
       .select()
       .single();
@@ -141,16 +192,23 @@ const updateMachine = async (req, res) => {
     res.json({ machine: data });
   } catch (err) {
     console.error('Update machine error:', err);
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'A machine with this name already exists' });
+    }
     res.status(500).json({ error: 'Failed to update machine' });
   }
 };
 
 // DELETE /api/admin/machines/:id
+// Soft delete: the machine is deactivated and flagged as deleted in the
+// database, but the row (and all its booking/sensor history) is kept for
+// reporting. It simply stops showing up in the app.
 const deleteMachine = async (req, res) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     const { id } = req.params;
-    // Check for active bookings
+
+    // Can't deactivate a machine that's mid-cycle or has people queued on it
     const { data: active, error: checkErr } = await supabase
       .from('bookings')
       .select('booking_id')
@@ -159,17 +217,36 @@ const deleteMachine = async (req, res) => {
       .limit(1);
     if (checkErr) throw checkErr;
     if (active && active.length) {
-      return res.status(409).json({ error: 'Cannot delete machine with active bookings' });
+      return res.status(409).json({ error: 'Cannot deactivate a machine with active or pending bookings' });
     }
-    const { error } = await supabase.from('machines').delete().eq('machine_id', id);
-    if (error) {
-      if (error.code === 'PGRST116') return res.status(404).json({ error: 'Machine not found' });
-      throw error;
+
+    // Flag the row as deleted rather than removing it
+    const { data: updated, error } = await supabase
+      .from('machines')
+      .update({
+        is_deleted: true,
+        deleted_at: new Date().toISOString(),
+        status: 'offline',
+        updated_at: new Date().toISOString()
+      })
+      .eq('machine_id', id)
+      .select()
+      .maybeSingle();
+
+    // Fallback: if the soft-delete columns don't exist yet (migration not run),
+    // fall back to a hard delete so the admin action still works.
+    if (error && error.code === '42703') {
+      const { error: delErr } = await supabase.from('machines').delete().eq('machine_id', id);
+      if (delErr) throw delErr;
+      return res.json({ message: 'Machine removed', soft: false });
     }
-    res.json({ message: 'Machine deleted successfully' });
+    if (error) throw error;
+    if (!updated) return res.status(404).json({ error: 'Machine not found' });
+
+    res.json({ message: 'Machine deactivated', soft: true, machine: updated });
   } catch (err) {
     console.error('Delete machine error:', err);
-    res.status(500).json({ error: 'Failed to delete machine' });
+    res.status(500).json({ error: 'Failed to deactivate machine' });
   }
 };
 

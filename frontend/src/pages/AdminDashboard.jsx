@@ -3,7 +3,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@clerk/clerk-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Cell,
+  Tooltip, ResponsiveContainer, Cell, LabelList,
+  PieChart, Pie,
 } from 'recharts'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -30,11 +31,39 @@ const B_STATUS = {
 
 const CYCLE_COLORS = { normal: TEAL, delicate: '#8B5CF6', heavy: AMBER }
 
-const LOCATIONS = [
-  'Block A · Ground', 'Block A · Level 1', 'Block A · Level 2',
-  'Block B · Ground', 'Block B · Level 1',
-  'Block C · Ground', 'Block C · Level 1',
-]
+// Load machines and enrich in-use ones with their REAL live cycle progress from
+// the sensor feed (no hardcoded/placeholder percentages).
+async function loadMachines(apiUrl) {
+  const res = await fetch(`${apiUrl}/api/machines`)
+  if (!res.ok) return []
+  const { machines = [] } = await res.json()
+  return Promise.all(machines.map(async m => {
+    const base = {
+      id:       m.machine_id,
+      name:     m.machine_name,
+      location: m.location || '',
+      floor:    m.floor_label || m.floor || '',
+      status:   m.status,
+      progress: 0,
+      timeLeft: null,
+    }
+    if (m.status === 'in_use') {
+      try {
+        const sRes = await fetch(`${apiUrl}/api/sensors/${m.machine_id}/latest`)
+        if (sRes.ok) {
+          const { latest_reading } = await sRes.json()
+          if (latest_reading?.cycle_progress_pct != null) {
+            base.progress = Math.round(latest_reading.cycle_progress_pct)
+            base.timeLeft = Math.max(0, Math.round(((100 - base.progress) / 100) * 45))
+          }
+        }
+      } catch { /* keep defaults if sensor feed is unavailable */ }
+    }
+    return base
+  }))
+}
+
+
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
 function DrumIcon({ color = TEAL, spin = false, size = 22 }) {
@@ -80,9 +109,9 @@ function Toast({ message, type = 'success', onDone }) {
 }
 
 // ─── Machine Modal (Add / Edit) ───────────────────────────────────────────────
-const BLANK_MACHINE = { name: '', location: LOCATIONS[0], type: 'washer', status: 'available', cycles: 0 }
+const BLANK_MACHINE = { name: '', location: '', floor: '', status: 'available' }
 
-function MachineModal({ machine, onSave, onClose }) {
+function MachineModal({ machine, onSave, onClose, apiUrl }) {
   const isEdit = !!machine?.id
   const [form, setForm] = useState(machine || BLANK_MACHINE)
   const [errors, setErrors] = useState({})
@@ -97,15 +126,22 @@ function MachineModal({ machine, onSave, onClose }) {
 
   function validate() {
     const e = {}
-    if (!form.name.trim())     e.name     = 'Name is required'
-    if (!form.location.trim()) e.location = 'Location is required'
+    if (!form.name?.trim())     e.name     = 'Name is required'
+    if (!form.location?.trim()) e.location = 'Location is required'
     return e
   }
 
   function handleSave() {
     const e = validate()
     if (Object.keys(e).length) { setErrors(e); return }
-    onSave({ ...form, cycles: Number(form.cycles) || 0 })
+    // Location and floor are kept as separate fields — never merged into one
+    // string (merging caused the floor to be duplicated and to compound on edit).
+    onSave({
+      ...form,
+      name: form.name.trim(),
+      location: form.location.trim(),
+      floor: form.floor === '' || form.floor == null ? '' : String(form.floor).trim(),
+    })
   }
 
   function handleBackdrop(ev) {
@@ -117,7 +153,7 @@ function MachineModal({ machine, onSave, onClose }) {
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(13,27,42,0.6)', backdropFilter: 'blur(4px)' }}
       onClick={handleBackdrop}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-slide-in">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-slide-in overflow-y-auto max-h-[90vh]">
         <div className="flex items-center justify-between px-6 py-5 border-b border-[#E2EEED]">
           <div>
             <h2 className="font-display font-700 text-[#1E3448] text-lg">
@@ -135,6 +171,7 @@ function MachineModal({ machine, onSave, onClose }) {
           </button>
         </div>
         <div className="px-6 py-5 space-y-4">
+          {/* Machine Name */}
           <div>
             <label className="block text-xs font-700 text-[#1E3448] uppercase tracking-widest mb-1.5">
               Machine Name *
@@ -152,68 +189,63 @@ function MachineModal({ machine, onSave, onClose }) {
             />
             {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
           </div>
+
+          {/* Location (free-text input) */}
           <div>
             <label className="block text-xs font-700 text-[#1E3448] uppercase tracking-widest mb-1.5">
-              Type
+              Location (Residence) *
             </label>
-            <div className="flex gap-2">
-              {['washer', 'dryer'].map(t => (
-                <button key={t} onClick={() => set('type', t)}
-                  className={`flex-1 text-sm font-medium py-2.5 rounded-xl border transition-all ${
-                    form.type === t
-                      ? 'bg-[#0ABAB5] text-white border-[#0ABAB5] shadow-sm'
-                      : 'border-[#E2EEED] text-[#7A96A0] hover:border-[#0ABAB5] hover:text-[#0ABAB5]'
-                  }`}>
-                  {t === 'washer' ? '🫧 Washer' : '💨 Dryer'}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-700 text-[#1E3448] uppercase tracking-widest mb-1.5">
-              Location *
-            </label>
-            <select
+            <input
               value={form.location}
               onChange={e => set('location', e.target.value)}
-              className={`w-full text-sm px-4 py-2.5 rounded-xl border outline-none transition-all appearance-none cursor-pointer ${
+              placeholder="e.g. Block A, Azania House…"
+              className={`w-full text-sm px-4 py-2.5 rounded-xl border outline-none transition-all ${
                 errors.location
-                  ? 'border-red-300 bg-red-50'
+                  ? 'border-red-300 bg-red-50 focus:border-red-400'
                   : 'border-[#E2EEED] bg-[#F0F7F7] focus:border-[#0ABAB5] focus:bg-white'
-              }`}>
-              {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
-            </select>
+              }`}
+            />
             {errors.location && <p className="text-xs text-red-500 mt-1">{errors.location}</p>}
           </div>
+
+          {/* Floor (number scroller: Ground = 0, then 1–50) */}
           <div>
             <label className="block text-xs font-700 text-[#1E3448] uppercase tracking-widest mb-1.5">
-              Status
+              Floor
             </label>
-            <div className="flex gap-2 flex-wrap">
-              {Object.entries(M_STATUS).map(([key, cfg]) => (
-                <button key={key} onClick={() => set('status', key)}
-                  className={`text-xs font-medium px-3 py-2 rounded-xl border transition-all ${
-                    form.status === key
-                      ? `${cfg.bg} ${cfg.text} border-transparent shadow-sm`
-                      : 'border-[#E2EEED] text-[#7A96A0] hover:border-[#0ABAB5]'
-                  }`}>
-                  <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: cfg.dot }}/>
-                  {cfg.label}
-                </button>
-              ))}
-            </div>
+            <input
+              type="number"
+              min="0"
+              max="50"
+              value={form.floor === '' ? '' : form.floor}
+              onChange={e => set('floor', e.target.value)}
+              placeholder="0 = Ground floor"
+              className="w-full text-sm px-4 py-2.5 rounded-xl border border-[#E2EEED] bg-[#F0F7F7] focus:border-[#0ABAB5] focus:bg-white outline-none transition-all"
+            />
+            <p className="text-xs text-[#7A96A0] mt-1">0 = Ground floor · scroll or type up to 50</p>
           </div>
+
+          {/* Status — edit only */}
           {isEdit && (
             <div>
               <label className="block text-xs font-700 text-[#1E3448] uppercase tracking-widest mb-1.5">
-                Total Cycles
+                Status
               </label>
-              <input
-                type="number" min="0"
-                value={form.cycles}
-                onChange={e => set('cycles', e.target.value)}
-                className="w-full text-sm px-4 py-2.5 rounded-xl border border-[#E2EEED] bg-[#F0F7F7] focus:border-[#0ABAB5] focus:bg-white outline-none transition-all"
-              />
+              <div className="flex gap-2 flex-wrap">
+                {/* "In Use" is set automatically when a cycle runs — admins only
+                    toggle between Available and Maintenance manually. */}
+                {Object.entries(M_STATUS).filter(([key]) => key !== 'in_use').map(([key, cfg]) => (
+                  <button key={key} onClick={() => set('status', key)}
+                    className={`text-xs font-medium px-3 py-2 rounded-xl border transition-all ${
+                      form.status === key
+                        ? `${cfg.bg} ${cfg.text} border-transparent shadow-sm`
+                        : 'border-[#E2EEED] text-[#7A96A0] hover:border-[#0ABAB5]'
+                    }`}>
+                    <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: cfg.dot }}/>
+                    {cfg.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -250,10 +282,10 @@ function DeleteModal({ machine, onConfirm, onClose }) {
             <path d="M10 11v6M14 11v6" stroke={RED} strokeWidth="1.5" strokeLinecap="round"/>
           </svg>
         </div>
-        <h3 className="font-display font-700 text-[#1E3448] text-lg mb-2">Remove Machine?</h3>
+        <h3 className="font-display font-700 text-[#1E3448] text-lg mb-2">Deactivate Machine?</h3>
         <p className="text-sm text-[#7A96A0] mb-6">
-          <strong className="text-[#1E3448]">{machine.name}</strong> will be permanently removed from the system.
-          This action cannot be undone.
+          <strong className="text-[#1E3448]">{machine.name}</strong> will be deactivated and hidden from the app.
+          Its booking and sensor history stays in the database for reporting.
         </p>
         <div className="flex gap-3">
           <button onClick={onClose}
@@ -263,7 +295,7 @@ function DeleteModal({ machine, onConfirm, onClose }) {
           <button onClick={onConfirm}
             className="flex-1 text-sm font-medium text-white px-4 py-2.5 rounded-xl transition-all hover:opacity-90 active:scale-95"
             style={{ background: RED }}>
-            Yes, Remove
+            Yes, Deactivate
           </button>
         </div>
       </div>
@@ -320,100 +352,104 @@ function MachinesSection({ machines, setMachines, showToast, apiUrl, refreshStat
   const [modal, setModal] = useState(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
+  const [blockFilter, setBlockFilter] = useState('All')
+  const [floorFilter, setFloorFilter] = useState('All')
+  const [sort, setSort] = useState('name-asc')
 
   const filtered = machines.filter(m => {
     const matchSearch = m.name.toLowerCase().includes(search.toLowerCase()) ||
-                        m.location.toLowerCase().includes(search.toLowerCase())
+                        (m.location || '').toLowerCase().includes(search.toLowerCase())
     const matchFilter = filter === 'all' || m.status === filter
-    return matchSearch && matchFilter
+    const matchBlock  = blockFilter === 'All' || (m.location || '').toLowerCase().includes(blockFilter.toLowerCase())
+    const matchFloor  = floorFilter === 'All' || String(m.floor) === String(floorFilter)
+    return matchSearch && matchFilter && matchBlock && matchFloor
+  })
+
+  const STATUS_ORDER = { in_use: 0, available: 1, maintenance: 2, offline: 3 }
+  const sorted = [...filtered].sort((a, b) => {
+    switch (sort) {
+      case 'name-desc':     return b.name.localeCompare(a.name)
+      case 'location':      return (a.location || '').localeCompare(b.location || '') || a.name.localeCompare(b.name)
+      case 'status':        return (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9) || a.name.localeCompare(b.name)
+      default:              return a.name.localeCompare(b.name) // name-asc
+    }
   })
 
   async function refreshMachinesAndStats() {
-    const machinesRes = await fetch(`${apiUrl}/api/machines`)
-    const machinesData = await machinesRes.json()
-    const transformed = machinesData.machines.map(m => ({
-      id: m.machine_id,
-      name: m.machine_name,
-      location: m.location,
-      type: m.machine_name.toLowerCase().includes('dryer') ? 'dryer' : 'washer',
-      status: m.status,
-      progress: m.status === 'in_use' ? 28 : 0,
-      timeLeft: m.status === 'in_use' ? 22 : null,
-      cycles: m.capacity_cycles || 0,
-    }))
-    setMachines(transformed)
+    setMachines(await loadMachines(apiUrl))
     if (refreshStats) await refreshStats()
   }
 
   async function handleSave(data) {
     const token = await getToken()
     try {
-      if (modal.mode === 'add') {
-        const payload = {
-          machine_name: data.name,
-          location: data.location,
-          floor: 0,
-          capacity_cycles: data.cycles || 1,
-          status: data.status,
-        }
-        await fetch(`${apiUrl}/api/admin/machines`, {
-          method: 'POST',
+      const payload = {
+        machine_name: data.name,
+        location: data.location,
+        floor: data.floor || '',
+        status: data.status,
+      }
+      const isAdd = modal.mode === 'add'
+      const res = await fetch(
+        isAdd ? `${apiUrl}/api/admin/machines` : `${apiUrl}/api/admin/machines/${data.id}`,
+        {
+          method: isAdd ? 'POST' : 'PUT',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
-        })
-      } else {
-        const payload = {
-          machine_name: data.name,
-          location: data.location,
-          capacity_cycles: data.cycles || 1,
-          status: data.status,
         }
-        await fetch(`${apiUrl}/api/admin/machines/${data.id}`, {
-          method: 'PUT',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        })
+      )
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}))
+        throw new Error(error || `Server error ${res.status}`)
       }
       await refreshMachinesAndStats()
-      showToast(`${modal.mode === 'add' ? 'Added' : 'Updated'} ${data.name}`, 'success')
+      showToast(`${isAdd ? 'Added' : 'Updated'} ${data.name}`, 'success')
+      setModal(null)
     } catch (err) {
       console.error(err)
-      showToast(`Error: ${err.message}`, 'warning')
-    } finally {
-      setModal(null)
+      showToast(err.message, 'warning')
     }
   }
 
   async function handleDelete() {
     const token = await getToken()
     try {
-      await fetch(`${apiUrl}/api/admin/machines/${modal.machine.id}`, {
+      const res = await fetch(`${apiUrl}/api/admin/machines/${modal.machine.id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       })
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}))
+        throw new Error(error || `Server error ${res.status}`)
+      }
+      const name = modal.machine.name
+      setModal(null)
       await refreshMachinesAndStats()
-      showToast(`${modal.machine.name} removed`, 'delete')
+      showToast(`${name} deactivated`, 'delete')
     } catch (err) {
       console.error(err)
-      showToast(`Cannot delete: ${err.message}`, 'warning')
-    } finally {
       setModal(null)
+      showToast(err.message, 'warning')
     }
   }
 
   async function setStatus(id, newStatus) {
     const token = await getToken()
     try {
-      await fetch(`${apiUrl}/api/machines/${id}/status`, {
+      const res = await fetch(`${apiUrl}/api/machines/${id}/status`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       })
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}))
+        throw new Error(error || `Server error ${res.status}`)
+      }
       await refreshMachinesAndStats()
       showToast(`Status updated to ${M_STATUS[newStatus]?.label ?? newStatus}`, 'success')
     } catch (err) {
       console.error(err)
-      showToast(`Error: ${err.message}`, 'warning')
+      showToast(err.message, 'warning')
     }
   }
 
@@ -440,8 +476,9 @@ function MachinesSection({ machines, setMachines, showToast, apiUrl, refreshStat
           </button>
         </div>
 
-        <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative flex-1 min-w-0">
+        <div className="flex flex-col gap-3 mb-4">
+          {/* Search */}
+          <div className="relative">
             <svg className="absolute left-4 top-1/2 -translate-y-1/2 text-[#7A96A0]" width="14" height="14" viewBox="0 0 14 14" fill="none">
               <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.3"/>
               <path d="M9.5 9.5l2.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
@@ -453,20 +490,75 @@ function MachinesSection({ machines, setMachines, showToast, apiUrl, refreshStat
               className="w-full text-sm pl-11 pr-4 py-3 rounded-full border border-[#E2EEED] bg-[#F8FBFB] focus:border-[#0ABAB5] focus:bg-white outline-none transition-all"
             />
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {[
-              { key: 'all', label: 'All' },
-              { key: 'available', label: 'Available' },
-              { key: 'in_use', label: 'In Use' },
-              { key: 'maintenance', label: 'Maintenance' },
-            ].map(({ key, label }) => (
-              <button key={key} onClick={() => setFilter(key)}
-                className={`text-xs font-medium px-3.5 py-2 rounded-full transition-all ${
-                  filter === key ? 'bg-[#0ABAB5] text-white shadow-sm' : 'text-[#7A96A0] bg-white border border-[#E2EEED] hover:border-[#0ABAB5] hover:text-[#0ABAB5]'
-                }`}>
-                {label}
+
+          {/* Filter row */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Status pills */}
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                { key: 'all', label: 'All' },
+                { key: 'available', label: 'Available' },
+                { key: 'in_use', label: 'In Use' },
+                { key: 'maintenance', label: 'Maintenance' },
+              ].map(({ key, label }) => (
+                <button key={key} onClick={() => setFilter(key)}
+                  className={`text-xs font-medium px-3.5 py-2 rounded-full transition-all ${
+                    filter === key ? 'bg-[#0ABAB5] text-white shadow-sm' : 'text-[#7A96A0] bg-white border border-[#E2EEED] hover:border-[#0ABAB5] hover:text-[#0ABAB5]'
+                  }`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="h-4 w-px bg-[#E2EEED] hidden sm:block"/>
+
+            {/* Location text filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-700 uppercase tracking-widest text-[#7A96A0] whitespace-nowrap">Location</span>
+              <input
+                type="text"
+                value={blockFilter === 'All' ? '' : blockFilter}
+                onChange={e => { setBlockFilter(e.target.value || 'All'); setFloorFilter('All') }}
+                placeholder="Filter location…"
+                className="text-xs border border-[#E2EEED] bg-white rounded-xl px-3 py-2 text-[#1E3448] focus:outline-none focus:border-[#0ABAB5] w-36"
+              />
+            </div>
+
+            {/* Floor number filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-700 uppercase tracking-widest text-[#7A96A0] whitespace-nowrap">Floor</span>
+              <input
+                type="number"
+                min="0"
+                max="50"
+                value={floorFilter === 'All' ? '' : floorFilter}
+                onChange={e => setFloorFilter(e.target.value === '' ? 'All' : e.target.value)}
+                placeholder="All"
+                className="text-xs border border-[#E2EEED] bg-white rounded-xl px-3 py-2 text-[#1E3448] focus:outline-none focus:border-[#0ABAB5] w-20"
+              />
+            </div>
+
+            {/* Sort */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-700 uppercase tracking-widest text-[#7A96A0] whitespace-nowrap">Sort</span>
+              <select
+                value={sort}
+                onChange={e => setSort(e.target.value)}
+                className="text-xs border border-[#E2EEED] bg-white rounded-xl px-3 py-2 text-[#1E3448] focus:outline-none focus:border-[#0ABAB5] cursor-pointer">
+                <option value="name-asc">Name (A–Z)</option>
+                <option value="name-desc">Name (Z–A)</option>
+                <option value="status">Status</option>
+                <option value="location">Location</option>
+              </select>
+            </div>
+
+            {(blockFilter !== 'All' || floorFilter !== 'All' || filter !== 'all' || search) && (
+              <button
+                onClick={() => { setSearch(''); setFilter('all'); setBlockFilter('All'); setFloorFilter('All'); }}
+                className="text-xs text-[#0ABAB5] hover:underline ml-auto">
+                Clear all filters
               </button>
-            ))}
+            )}
           </div>
         </div>
 
@@ -474,14 +566,14 @@ function MachinesSection({ machines, setMachines, showToast, apiUrl, refreshStat
           <div className="bg-white rounded-2xl border border-[#E2EEED] py-16 text-center">
             <div className="text-4xl mb-3">🔍</div>
             <p className="text-sm text-[#7A96A0]">No machines match your search</p>
-            <button onClick={() => { setSearch(''); setFilter('all') }}
+            <button onClick={() => { setSearch(''); setFilter('all'); setBlockFilter('All'); setFloorFilter('All') }}
               className="mt-3 text-xs text-[#0ABAB5] hover:underline">
               Clear filters
             </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {filtered.map(m => {
+            {sorted.map(m => {
               const cfg     = M_STATUS[m.status] || M_STATUS.available
               const isInUse = m.status === 'in_use'
               return (
@@ -496,8 +588,10 @@ function MachinesSection({ machines, setMachines, showToast, apiUrl, refreshStat
                       </div>
                       <div className="min-w-0">
                         <p className="font-display font-700 text-[#1E3448] text-sm">{m.name}</p>
-                        <p className="text-xs text-[#7A96A0] mt-0.5">{m.location}</p>
-                        <p className="text-xs text-[#7A96A0] mt-0.5">{m.cycles} cycles total</p>
+                        <p className="text-xs text-[#7A96A0] mt-0.5">
+                          {m.location}
+                          {m.floor !== '' && m.floor != null && ` · Floor ${m.floor}`}
+                        </p>
                         {isInUse && (
                           <div className="mt-2.5 w-44">
                             <div className="flex justify-between text-[10px] text-[#7A96A0] mb-1">
@@ -562,10 +656,10 @@ function MachinesSection({ machines, setMachines, showToast, apiUrl, refreshStat
       </section>
 
       {modal?.mode === 'add' && (
-        <MachineModal machine={null} onSave={handleSave} onClose={closeModal}/>
+        <MachineModal machine={null} onSave={handleSave} onClose={closeModal} apiUrl={apiUrl}/>
       )}
       {modal?.mode === 'edit' && (
-        <MachineModal machine={modal.machine} onSave={handleSave} onClose={closeModal}/>
+        <MachineModal machine={modal.machine} onSave={handleSave} onClose={closeModal} apiUrl={apiUrl}/>
       )}
       {modal?.mode === 'delete' && (
         <DeleteModal machine={modal.machine} onConfirm={handleDelete} onClose={closeModal}/>
@@ -578,9 +672,19 @@ function MachinesSection({ machines, setMachines, showToast, apiUrl, refreshStat
 function BookingsSection({ bookings, setBookings, showToast, apiUrl, refreshStats }) {
   const { getToken } = useAuth()
   const [statusFilter, setStatusFilter] = useState('all')
-  const filtered = statusFilter === 'all'
+  const [sort, setSort] = useState('newest')
+  const base = statusFilter === 'all'
     ? bookings
     : bookings.filter(b => b.status === statusFilter)
+  const filtered = [...base].sort((a, b) => {
+    switch (sort) {
+      case 'oldest':  return new Date(a.scheduledStart || 0) - new Date(b.scheduledStart || 0)
+      case 'user':    return (a.user || '').localeCompare(b.user || '')
+      case 'machine': return (a.machine || '').localeCompare(b.machine || '')
+      case 'status':  return (a.status || '').localeCompare(b.status || '')
+      default:        return new Date(b.scheduledStart || 0) - new Date(a.scheduledStart || 0) // newest
+    }
+  })
 
   async function refreshBookingsAndStats() {
     const token = await getToken()
@@ -592,6 +696,7 @@ function BookingsSection({ bookings, setBookings, showToast, apiUrl, refreshStat
       id: b.id,
       user: b.user,
       machine: b.machine,
+      scheduledStart: b.scheduled_start,
       time: new Date(b.scheduled_start).toLocaleString(),
       status: b.status,
       cycleType: b.cycle_type || 'normal'
@@ -603,15 +708,19 @@ function BookingsSection({ bookings, setBookings, showToast, apiUrl, refreshStat
   async function cancelBooking(id) {
     const token = await getToken()
     try {
-      await fetch(`${apiUrl}/api/bookings/${id}`, {
+      const res = await fetch(`${apiUrl}/api/bookings/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       })
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}))
+        throw new Error(error || `Server error ${res.status}`)
+      }
       await refreshBookingsAndStats()
       showToast('Booking cancelled', 'warning')
     } catch (err) {
       console.error(err)
-      showToast(`Error: ${err.message}`, 'warning')
+      showToast(err.message, 'warning')
     }
   }
 
@@ -646,6 +755,17 @@ function BookingsSection({ bookings, setBookings, showToast, apiUrl, refreshStat
                 </button>
               ))}
             </div>
+            <select
+              value={sort}
+              onChange={e => setSort(e.target.value)}
+              title="Sort bookings"
+              className="text-xs font-medium border border-[#E2EEED] bg-white rounded-xl px-3 py-2 text-[#1E3448] focus:outline-none focus:border-[#0ABAB5] cursor-pointer">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="status">Status</option>
+              <option value="user">User</option>
+              <option value="machine">Machine</option>
+            </select>
             <button onClick={exportCSV}
               className="flex items-center gap-2 text-xs font-medium text-[#1E3448] bg-white border border-[#E2EEED] px-4 py-2 rounded-xl hover:bg-[#F0F7F7] transition-colors">
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -695,7 +815,7 @@ function BookingsSection({ bookings, setBookings, showToast, apiUrl, refreshStat
                       </span>
                     </td>
                     <td className="px-4 py-3.5">
-                      {(b.status === 'pending' || b.status === 'active') ? (
+                      {b.status === 'pending' ? (
                         <button onClick={() => cancelBooking(b.id)}
                           className="text-xs font-medium text-red-500 hover:text-red-700 border border-red-100 hover:border-red-300 px-2.5 py-1 rounded-lg transition-colors">
                           Cancel
@@ -718,10 +838,22 @@ function BookingsSection({ bookings, setBookings, showToast, apiUrl, refreshStat
           </table>
         </div>
 
-        <div className="px-6 py-3 border-t border-[#E2EEED] bg-[#F0F7F7]">
+        <div className="px-6 py-3 border-t border-[#E2EEED] bg-[#F0F7F7] flex items-center justify-between gap-4 flex-wrap">
           <p className="text-xs text-[#7A96A0]">
             Showing <strong className="text-[#1E3448]">{filtered.length}</strong> of {bookings.length} bookings
           </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            {['pending', 'active', 'completed', 'cancelled'].map(s => {
+              const cfg = B_STATUS[s]
+              const n = bookings.filter(b => b.status === s).length
+              return (
+                <span key={s} className="inline-flex items-center gap-1.5 text-xs text-[#7A96A0]">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: cfg.dot }}/>
+                  {cfg.label} <strong className="text-[#1E3448]">{n}</strong>
+                </span>
+              )
+            })}
+          </div>
         </div>
       </div>
     </section>
@@ -740,6 +872,10 @@ function ChartSection({ chartData }) {
   }
 
   const maxVal = Math.max(...chartData.map(d => d.count))
+  const totalBookings = chartData.reduce((sum, d) => sum + d.count, 0)
+  const activeHours = chartData.filter(d => d.count > 0).length
+  const peakHour = chartData.find(d => d.count === maxVal)?.hour
+  const avgPerActiveHour = activeHours ? (totalBookings / activeHours).toFixed(1) : '0'
 
   function CustomTooltip({ active, payload, label }) {
     if (!active || !payload?.length) return null
@@ -755,39 +891,235 @@ function ChartSection({ chartData }) {
     )
   }
 
+  const KPI = ({ label, value }) => (
+    <div className="rounded-xl bg-[#F0F7F7] px-4 py-2.5">
+      <p className="text-[10px] font-700 uppercase tracking-widest text-[#7A96A0]">{label}</p>
+      <p className="font-display font-700 text-lg text-[#1E3448] mt-0.5">{value}</p>
+    </div>
+  )
+
   return (
     <section className="bg-white rounded-2xl border border-[#E2EEED] p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between gap-3 mb-5 flex-wrap">
         <div>
           <h2 className="font-display font-700 text-[#1E3448] text-base">Bookings Per Hour</h2>
-          <p className="text-xs text-[#7A96A0] mt-0.5">Daily demand pattern</p>
+          <p className="text-xs text-[#7A96A0] mt-0.5">Demand pattern over the last 7 days</p>
         </div>
         <div className="flex items-center gap-2 text-xs text-[#7A96A0]">
           <span className="w-3 h-3 rounded-sm inline-block" style={{ background: TEAL }}/>
           Bookings
         </div>
       </div>
-      <ResponsiveContainer width="100%" height={200}>
-        <BarChart data={chartData} barSize={28} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+
+      {/* KPI strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        <KPI label="Total (7d)" value={totalBookings}/>
+        <KPI label="Peak Hour" value={peakHour || '—'}/>
+        <KPI label="Busiest Count" value={maxVal}/>
+        <KPI label="Avg / Active Hr" value={avgPerActiveHour}/>
+      </div>
+
+      <ResponsiveContainer width="100%" height={220}>
+        <BarChart data={chartData} barSize={26} margin={{ top: 16, right: 4, left: -24, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#E2EEED" vertical={false}/>
-          <XAxis dataKey="hour" tick={{ fontSize: 10, fill: MUTED }} axisLine={false} tickLine={false}/>
+          <XAxis dataKey="hour" tick={{ fontSize: 10, fill: MUTED }} axisLine={false} tickLine={false} interval={1}/>
           <YAxis tick={{ fontSize: 10, fill: MUTED }} axisLine={false} tickLine={false} allowDecimals={false}/>
           <Tooltip content={<CustomTooltip />} cursor={{ fill: '#E0FAF9', radius: 6 }}/>
           <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+            <LabelList dataKey="count" position="top" fontSize={9} fill={MUTED}
+              formatter={v => (v > 0 ? v : '')}/>
             {chartData.map((entry, i) => (
-              <Cell key={i} fill={entry.count === maxVal ? '#09A8A3' : TEAL} opacity={entry.count === maxVal ? 1 : 0.75}/>
+              <Cell key={i} fill={entry.count === maxVal && maxVal > 0 ? '#09A8A3' : TEAL} opacity={entry.count === maxVal && maxVal > 0 ? 1 : 0.7}/>
             ))}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
-      <div className="mt-4 flex items-center gap-2 text-xs text-[#7A96A0]">
-        <span className="w-1.5 h-1.5 rounded-full" style={{ background: TEAL }}/>
-        Peak hour:
-        <strong className="ml-1" style={{ color: TEAL }}>
-          {chartData.find(d => d.count === maxVal)?.hour} · {maxVal} bookings
-        </strong>
+    </section>
+  )
+}
+
+// ─── Reusable donut card for categorical breakdowns (BI-style) ────────────────
+function DonutTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null
+  const p = payload[0]
+  return (
+    <div style={{
+      background: NAVY, color: '#fff', padding: '8px 14px', borderRadius: 10,
+      fontSize: 12, fontWeight: 600, boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+    }}>
+      <p style={{ color: p.payload.color }}>{p.name}</p>
+      <p>{p.value} ({p.payload.pct}%)</p>
+    </div>
+  )
+}
+
+function DonutCard({ title, subtitle, data, total }) {
+  const withPct = data.map(d => ({ ...d, pct: total ? Math.round((d.value / total) * 100) : 0 }))
+  const slices = withPct.filter(d => d.value > 0)
+  return (
+    <section className="bg-white rounded-2xl border border-[#E2EEED] p-6">
+      <div className="mb-2">
+        <h2 className="font-display font-700 text-[#1E3448] text-base">{title}</h2>
+        <p className="text-xs text-[#7A96A0] mt-0.5">{subtitle}</p>
+      </div>
+
+      {total === 0 ? (
+        <div className="h-[180px] flex items-center justify-center text-sm text-[#7A96A0]">No data yet</div>
+      ) : (
+        <div className="relative">
+          <ResponsiveContainer width="100%" height={180}>
+            <PieChart>
+              <Pie data={slices} dataKey="value" nameKey="name" cx="50%" cy="50%"
+                innerRadius={52} outerRadius={78} paddingAngle={2} stroke="none">
+                {slices.map((d, i) => <Cell key={i} fill={d.color}/>)}
+              </Pie>
+              <Tooltip content={<DonutTooltip/>}/>
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span className="font-display font-700 text-2xl text-[#1E3448]">{total}</span>
+            <span className="text-[10px] uppercase tracking-widest text-[#7A96A0]">Total</span>
+          </div>
+        </div>
+      )}
+
+      {/* Legend with counts + percentages */}
+      <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2">
+        {withPct.map(d => (
+          <div key={d.name} className="flex items-center gap-2 text-xs">
+            <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: d.color }}/>
+            <span className="text-[#7A96A0] truncate">{d.name}</span>
+            <span className="ml-auto font-medium text-[#1E3448]">{d.value}</span>
+            <span className="text-[#7A96A0] w-9 text-right">{d.pct}%</span>
+          </div>
+        ))}
       </div>
     </section>
+  )
+}
+
+// ─── Section: Booking insights (status + cycle mix donuts) ────────────────────
+function BookingInsightsSection({ bookings }) {
+  const total = bookings.length
+  const statusData = [
+    { name: 'Pending',   key: 'pending',   color: AMBER },
+    { name: 'Active',    key: 'active',    color: TEAL  },
+    { name: 'Completed', key: 'completed', color: GREEN },
+    { name: 'Cancelled', key: 'cancelled', color: RED   },
+  ].map(s => ({ ...s, value: bookings.filter(b => b.status === s.key).length }))
+
+  const cycleData = [
+    { name: 'Normal',   key: 'normal',   color: TEAL },
+    { name: 'Delicate', key: 'delicate', color: '#8B5CF6' },
+    { name: 'Heavy',    key: 'heavy',    color: AMBER },
+  ].map(c => ({ ...c, value: bookings.filter(b => (b.cycleType || 'normal') === c.key).length }))
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <DonutCard title="Booking Status Mix" subtitle="Share of bookings by status" data={statusData} total={total}/>
+      <DonutCard title="Cycle Type Mix" subtitle="Share of bookings by wash cycle" data={cycleData} total={total}/>
+    </div>
+  )
+}
+
+// ─── Section: Recent Activity + Weekly Usage (real booking data) ─────────────
+// Turn a booking into a human-readable feed line based on its status.
+function activityFor(b) {
+  switch (b.status) {
+    case 'completed': return { msg: `${b.machine} — cycle completed`,        type: 'info' }
+    case 'active':    return { msg: `${b.machine} — cycle running`,          type: 'info' }
+    case 'cancelled': return { msg: `${b.machine} booking cancelled`,        type: 'warn' }
+    default:          return { msg: `${b.user} booked ${b.machine}`,         type: 'info' }
+  }
+}
+
+function ActivityAndUsageSection({ bookings }) {
+  // Recent activity: newest bookings first
+  const recent = [...bookings]
+    .filter(b => b.scheduledStart)
+    .sort((a, c) => new Date(c.scheduledStart) - new Date(a.scheduledStart))
+    .slice(0, 6)
+
+  // Weekly usage: real bookings per weekday, scaled against the busiest day
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const counts = Array(7).fill(0)
+  bookings.forEach(b => {
+    if (b.scheduledStart) counts[new Date(b.scheduledStart).getDay()]++
+  })
+  // Re-order Mon → Sun for display
+  const order = [1, 2, 3, 4, 5, 6, 0]
+  const weekly = order.map(i => ({ day: DAYS[i], count: counts[i] }))
+  const peak = weekly.reduce((a, w) => (w.count > a.count ? w : a), weekly[0])
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Recent Activity */}
+      <section className="bg-white rounded-2xl border border-[#E2EEED] p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="font-display font-700 text-[#1E3448]">Recent Activity</h2>
+          <span className="flex items-center gap-1.5 text-xs font-medium text-[#22C55E]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse"/>Live
+          </span>
+        </div>
+        {recent.length === 0 ? (
+          <p className="text-sm text-[#7A96A0] py-6 text-center">No booking activity yet</p>
+        ) : (
+          <div className="space-y-1">
+            {recent.map((b, i) => {
+              const a = activityFor(b)
+              return (
+                <div key={b.id || i} className="flex gap-3">
+                  <div className="flex flex-col items-center pt-0.5">
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${a.type === 'warn' ? 'bg-[#F59E0B]' : 'bg-[#0ABAB5]'}`}/>
+                    {i < recent.length - 1 && <div className="w-px flex-1 bg-[#E2EEED] my-1"/>}
+                  </div>
+                  <div className="pb-3">
+                    <p className="text-sm text-[#1E3448]">{a.msg}</p>
+                    <p className="text-xs text-[#7A96A0] mt-0.5">
+                      {new Date(b.scheduledStart).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Weekly Machine Usage */}
+      <section className="bg-white rounded-2xl border border-[#E2EEED] p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="font-display font-700 text-[#1E3448]">Weekly Booking Activity</h2>
+            <p className="text-xs text-[#7A96A0] mt-0.5">Bookings per day of week</p>
+          </div>
+          <span className="text-xs text-[#7A96A0] font-medium">
+            Peak: <strong className="text-[#0ABAB5]">{peak.day} · {peak.count}</strong>
+          </span>
+        </div>
+        <ResponsiveContainer width="100%" height={160}>
+          <BarChart data={weekly} barSize={26} margin={{ top: 16, right: 4, left: -28, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E2EEED" vertical={false}/>
+            <XAxis dataKey="day" tick={{ fontSize: 10, fill: MUTED }} axisLine={false} tickLine={false}/>
+            <YAxis tick={{ fontSize: 10, fill: MUTED }} axisLine={false} tickLine={false} allowDecimals={false}/>
+            <Tooltip
+              cursor={{ fill: '#E0FAF9', radius: 6 }}
+              contentStyle={{ background: NAVY, border: 'none', borderRadius: 10, fontSize: 12 }}
+              labelStyle={{ color: TEAL, fontWeight: 600 }}
+              itemStyle={{ color: '#fff' }}
+              formatter={v => [`${v} booking${v !== 1 ? 's' : ''}`, '']}/>
+            <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+              <LabelList dataKey="count" position="top" fontSize={9} fill={MUTED}
+                formatter={v => (v > 0 ? v : '')}/>
+              {weekly.map((w, i) => (
+                <Cell key={i} fill={w.count === peak.count && w.count > 0 ? '#09A8A3' : TEAL}
+                  opacity={w.count === peak.count && w.count > 0 ? 1 : 0.7}/>
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </section>
+    </div>
   )
 }
 
@@ -816,11 +1148,11 @@ export default function AdminDashboard() {
     setLoading(true)
     try {
       const token = await getToken()
-      const [statsRes, bookingsRes, chartRes, machinesRes] = await Promise.all([
+      const [statsRes, bookingsRes, chartRes, machinesList] = await Promise.all([
         fetch(`${apiUrl}/api/admin/stats`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${apiUrl}/api/admin/bookings`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${apiUrl}/api/admin/charts/bookings-per-hour`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${apiUrl}/api/machines`)
+        loadMachines(apiUrl)
       ])
       if (statsRes.ok) setStats(await statsRes.json())
       if (bookingsRes.ok) {
@@ -829,6 +1161,7 @@ export default function AdminDashboard() {
           id: b.id,
           user: b.user,
           machine: b.machine,
+          scheduledStart: b.scheduled_start,
           time: new Date(b.scheduled_start).toLocaleString(),
           status: b.status,
           cycleType: b.cycle_type || 'normal'
@@ -838,19 +1171,7 @@ export default function AdminDashboard() {
         const data = await chartRes.json()
         setChartData(data.chartData)
       }
-      if (machinesRes.ok) {
-        const data = await machinesRes.json()
-        setMachines(data.machines.map(m => ({
-          id: m.machine_id,
-          name: m.machine_name,
-          location: m.location,
-          type: m.machine_name.toLowerCase().includes('dryer') ? 'dryer' : 'washer',
-          status: m.status,
-          progress: m.status === 'in_use' ? 28 : 0,
-          timeLeft: m.status === 'in_use' ? 22 : null,
-          cycles: m.capacity_cycles || 0,
-        })))
-      }
+      setMachines(machinesList)
     } catch (err) {
       console.error(err)
       showToast('Failed to load data', 'warning')
@@ -914,6 +1235,7 @@ export default function AdminDashboard() {
           refreshStats={refreshStats}
         />
         <ChartSection chartData={chartData}/>
+        <BookingInsightsSection bookings={bookings}/>
         <BookingsSection
           bookings={bookings}
           setBookings={setBookings}
@@ -921,6 +1243,7 @@ export default function AdminDashboard() {
           apiUrl={apiUrl}
           refreshStats={refreshStats}
         />
+        <ActivityAndUsageSection bookings={bookings}/>
       </div>
 
       {toast && <Toast message={toast.msg} type={toast.type} onDone={() => setToast(null)}/>}

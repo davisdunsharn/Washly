@@ -1,13 +1,24 @@
 // controllers/machineController.js
 const { supabase } = require('../config/supabase');
 
-// GET /api/machines - Get all machines with latest status
+// GET /api/machines - Get all live (non-deactivated) machines with latest status
 const getAllMachines = async (req, res) => {
   try {
-    const { data: machines, error } = await supabase
+    // Exclude soft-deleted machines so deactivated units never appear in the app.
+    let { data: machines, error } = await supabase
       .from('machines')
       .select('*')
+      .eq('is_deleted', false)
       .order('machine_name', { ascending: true });
+
+    // Fallback for databases where the soft-delete migration hasn't run yet
+    // (undefined_column). The app still works; it just shows every machine.
+    if (error && error.code === '42703') {
+      ({ data: machines, error } = await supabase
+        .from('machines')
+        .select('*')
+        .order('machine_name', { ascending: true }));
+    }
 
     if (error) throw error;
 

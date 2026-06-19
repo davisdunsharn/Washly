@@ -126,6 +126,8 @@ function MachineCard({ machine, onBook, delay }) {
 
 // ─── Booking Modal ───────────────────────────────────────────────────────────
 function BookingModal({ machine, onClose, onConfirm }) {
+  const today = new Date().toISOString().split('T')[0]
+  const [date, setDate] = useState(today)
   const [time, setTime] = useState('08:00')
   const [cycleType, setCycleType] = useState('normal')
   const selectedCycle = CYCLE_TYPES.find(c => c.value === cycleType) || CYCLE_TYPES[0]
@@ -177,14 +179,26 @@ function BookingModal({ machine, onClose, onConfirm }) {
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-[#7A96A0] mb-1.5">Preferred Time</label>
-            <input
-              type="time"
-              value={time}
-              onChange={e => setTime(e.target.value)}
-              className="w-full border border-[#E2EEED] rounded-xl px-4 py-2.5 text-sm text-[#1E3448] focus:outline-none focus:ring-2 focus:ring-[#0ABAB5]/30 focus:border-[#0ABAB5]"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[#7A96A0] mb-1.5">Preferred Date</label>
+              <input
+                type="date"
+                value={date}
+                min={today}
+                onChange={e => setDate(e.target.value)}
+                className="w-full border border-[#E2EEED] rounded-xl px-4 py-2.5 text-sm text-[#1E3448] focus:outline-none focus:ring-2 focus:ring-[#0ABAB5]/30 focus:border-[#0ABAB5]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#7A96A0] mb-1.5">Preferred Time</label>
+              <input
+                type="time"
+                value={time}
+                onChange={e => setTime(e.target.value)}
+                className="w-full border border-[#E2EEED] rounded-xl px-4 py-2.5 text-sm text-[#1E3448] focus:outline-none focus:ring-2 focus:ring-[#0ABAB5]/30 focus:border-[#0ABAB5]"
+              />
+            </div>
           </div>
 
           <div className="p-3 bg-[#F0F7F7] rounded-xl">
@@ -202,7 +216,7 @@ function BookingModal({ machine, onClose, onConfirm }) {
             Cancel
           </button>
           <button
-            onClick={() => onConfirm({ machine, cycleType, time })}
+            onClick={() => onConfirm({ machine, cycleType, time, date })}
             className="flex-1 text-sm font-medium bg-[#0ABAB5] text-white py-2.5 rounded-xl hover:bg-[#09A8A3] transition-colors shadow-sm">
             Confirm Booking
           </button>
@@ -227,7 +241,8 @@ function StatCard({ label, value, sub, color, delay }) {
 export default function DashboardPage() {
   const { user } = useUser()
   const { getToken } = useAuth()
-  const rawName = user?.username || user?.firstName || user?.fullName || 'there'
+  const rawName = user?.username || user?.firstName || user?.fullName
+    || user?.primaryEmailAddress?.emailAddress?.split('@')[0] || 'there'
   const displayName = rawName.charAt(0).toUpperCase() + rawName.slice(1)
 
   const [machines, setMachines] = useState([])
@@ -243,33 +258,8 @@ export default function DashboardPage() {
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
   const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null
 
-  // Load real machines (once, no random cycles)
-  useEffect(() => {
-    const loadMachines = async () => {
-      try {
-        const res = await fetch(`${apiUrl}/api/machines`)
-        if (res.ok) {
-          const data = await res.json()
-          const formatted = (data.machines || []).map(m => ({
-            id: m.machine_id,
-            name: m.machine_name,
-            room: m.location,
-            location: m.location,
-            status: m.status,
-            progress: m.status === 'in_use' ? 28 : 0,
-            timeLeft: m.status === 'in_use' ? 22 : null,
-            cycles: m.capacity_cycles || 0,
-          }))
-          setMachines(formatted)
-        }
-      } catch (err) {
-        // fallback to empty array
-      }
-    }
-    loadMachines()
-  }, [apiUrl])  // runs only once on mount
-
   // Refresh machine data every 5 seconds with real sensor data
+  // (runs immediately on mount, then polls — no placeholder progress values)
   useEffect(() => {
     const refreshMachines = async () => {
       try {
@@ -330,9 +320,11 @@ export default function DashboardPage() {
     const channel = supabase
       .channel('machines')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'machines' }, (payload) => {
+        const updated = payload.new
+        if (!updated?.machine_id) return
         setMachines(prev => prev.map(m =>
-          m.id === payload.new.machine_id
-            ? { ...m, status: payload.new.status }
+          m.id === updated.machine_id
+            ? { ...m, status: updated.status }
             : m
         ))
       })
@@ -351,6 +343,7 @@ export default function DashboardPage() {
       const formatted = (data.bookings || []).map(b => ({
         id: b.booking_id?.slice(0, 7) || b.id,
         machine: b.machines?.machine_name || 'Unknown',
+        machine_id: b.machine_id,   // needed to match booked running machines
         date: new Date(b.scheduled_start).toLocaleString(),
         status: b.status === 'pending' ? 'upcoming' : b.status === 'active' ? 'active' : 'complete',
         duration: `${b.duration_minutes} min`,
@@ -402,15 +395,13 @@ export default function DashboardPage() {
     }
   }
 
-  const handleConfirmBooking = async ({ machine, cycleType, time }) => {
+  const handleConfirmBooking = async ({ machine, cycleType, time, date }) => {
     try {
       const token = await getToken()
       const cycleDurations = { normal: 45, delicate: 60, heavy: 30 }
       const duration = cycleDurations[cycleType] || 45
       const [hours, minutes] = time.split(':')
-      const scheduledStart = new Date()
-      scheduledStart.setHours(parseInt(hours), parseInt(minutes), 0, 0)
-      if (scheduledStart < new Date()) scheduledStart.setDate(scheduledStart.getDate() + 1)
+      const scheduledStart = new Date(`${date}T${time}:00`)
 
       const res = await fetch(`${apiUrl}/api/bookings`, {
         method: 'POST',
@@ -442,21 +433,34 @@ export default function DashboardPage() {
     }
   }
 
-  const availableCount   = machines.filter(m => m.status === 'available').length
-  const runningCount     = machines.filter(m => m.status === 'in_use' || m.status === 'running').length
-  const maintenanceCount = machines.filter(m => m.status === 'maintenance').length
-  const total            = machines.length || 1
-  const filteredMachines = filter === 'all' ? machines : machines.filter(m => m.status === filter)
+  // IDs of machines the current user has booked (active or upcoming)
+  const userBookedMachineIds = new Set(
+    bookings
+      .filter(b => b.status === 'active' || b.status === 'upcoming')
+      .map(b => b.machine_id)
+      .filter(Boolean)
+  )
+
+  // Visible machines: available ones + running ones the user personally booked
+  // Maintenance machines are never shown to users
+  const visibleMachines = machines.filter(m => {
+    if (m.status === 'available') return true
+    if (m.status === 'in_use' || m.status === 'running') return userBookedMachineIds.has(m.id)
+    return false // maintenance, offline, etc. — hidden
+  })
+
+  const availableCount = visibleMachines.filter(m => m.status === 'available').length
+  const runningCount   = visibleMachines.filter(m => m.status === 'in_use' || m.status === 'running').length
+  const total          = visibleMachines.length || 1
+  const filteredMachines = filter === 'all'
+    ? visibleMachines
+    : visibleMachines.filter(m => {
+        if (filter === 'in_use') return m.status === 'in_use' || m.status === 'running'
+        return m.status === filter
+      })
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
-
-  const ACTIVITY = [
-    { time: '11:02 AM', msg: 'Washer A2 started — Washing cycle', type: 'info' },
-    { time: '10:48 AM', msg: 'Washer B1 entered Rinsing phase',   type: 'info' },
-    { time: '10:31 AM', msg: 'Washer B2 entered Spinning phase',  type: 'info' },
-    { time: '08:15 AM', msg: 'Washer C1 flagged for maintenance', type: 'warn' },
-  ]
 
   return (
     <div className="min-h-screen bg-[#F0F7F7]">
@@ -474,7 +478,7 @@ export default function DashboardPage() {
             <div className="flex gap-6">
               <div className="text-center"><p className="text-2xl font-display font-700 text-[#22C55E]">{availableCount}</p><p className="text-white/50 text-xs">Available</p></div>
               <div className="text-center"><p className="text-2xl font-display font-700 text-[#0ABAB5]">{runningCount}</p><p className="text-white/50 text-xs">Running</p></div>
-              <div className="text-center"><p className="text-2xl font-display font-700 text-[#F59E0B]">{maintenanceCount}</p><p className="text-white/50 text-xs">Maintenance</p></div>
+
             </div>
           </div>
           <div className="mt-6 flex flex-wrap gap-3">
@@ -492,7 +496,7 @@ export default function DashboardPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {/* Stat Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Total Machines" value={machines.length}       sub="All blocks"        color="text-[#1E3448]" delay="delay-100"/>
+          <StatCard label="My Running"      value={runningCount}          sub="Your active machines" color="text-[#0ABAB5]" delay="delay-100"/>
           <StatCard label="My Bookings"    value={bookings.length}       sub="Active & upcoming" color="text-[#0ABAB5]" delay="delay-200"/>
           <StatCard label="Available Now"  value={availableCount}        sub="Ready to book"     color="text-[#22C55E]" delay="delay-300"/>
           <StatCard label="Utilisation"    value={`${Math.round((runningCount / total) * 100)}%`} sub="In use" color="text-[#F59E0B]" delay="delay-400"/>
@@ -503,7 +507,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display font-700 text-[#1E3448] text-lg">Machine Status</h2>
             <div className="flex gap-2">
-              {['all', 'available', 'in_use', 'maintenance'].map(f => (
+              {['all', 'available', 'in_use'].map(f => (
                 <button key={f} onClick={() => setFilter(f)}
                   className={`text-xs font-medium px-3 py-1.5 rounded-full transition-all ${filter === f ? 'bg-[#0ABAB5] text-white shadow-sm' : 'bg-white text-[#7A96A0] border border-[#E2EEED] hover:border-[#0ABAB5]/40'}`}>
                   {f === 'in_use' ? 'Running' : f.charAt(0).toUpperCase() + f.slice(1)}
@@ -518,88 +522,38 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* Bookings + Activity */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <section className="bg-white rounded-2xl border border-[#E2EEED] p-6 animate-slide-in delay-300">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="font-display font-700 text-[#1E3448]">My Bookings</h2>
-              <button className="text-xs font-medium text-[#0ABAB5] hover:underline">View all</button>
-            </div>
-            <div className="space-y-3">
-              {bookings.length === 0 ? (
-                <p className="text-sm text-[#7A96A0] text-center py-4">No bookings yet. Book a machine!</p>
-              ) : bookings.map(b => (
-                <div key={b.id} className="flex items-center gap-4 p-3 rounded-xl bg-[#F0F7F7] hover:bg-[#E0FAF9] transition-colors">
-                  <div className="w-9 h-9 rounded-xl bg-white border border-[#E2EEED] flex items-center justify-center text-[#0ABAB5]">
-                    <DrumIcon size={20} phase={CYCLE_PHASES[0]} isRunning={b.status === 'active'}/>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-[#1E3448] truncate">{b.machine}</p>
-                    <p className="text-xs text-[#7A96A0]">{b.date} · {b.duration}</p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${bookingStyles[b.status] || 'bg-gray-50 text-gray-700'}`}>
-                      {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
-                    </span>
-                    <span className="text-xs text-[#7A96A0]">{b.id}</span>
-                    {b.status === 'upcoming' && (
-                      <button
-                        onClick={() => startMachine(b.booking_id)}
-                        className="mt-1 text-xs bg-[#0ABAB5] text-white px-2 py-0.5 rounded"
-                      >
-                        Start
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="bg-white rounded-2xl border border-[#E2EEED] p-6 animate-slide-in delay-400">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="font-display font-700 text-[#1E3448]">Recent Activity</h2>
-              <span className="flex items-center gap-1.5 text-xs font-medium text-[#22C55E]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse"/>Live
-              </span>
-            </div>
-            <div className="space-y-4">
-              {ACTIVITY.map((a, i) => (
-                <div key={i} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${a.type === 'warn' ? 'bg-[#F59E0B]' : 'bg-[#0ABAB5]'}`}/>
-                    {i < ACTIVITY.length - 1 && <div className="w-px flex-1 bg-[#E2EEED] mt-1"/>}
-                  </div>
-                  <div className="pb-4">
-                    <p className="text-sm text-[#1E3448]">{a.msg}</p>
-                    <p className="text-xs text-[#7A96A0] mt-0.5">{a.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        {/* Weekly chart (mock) */}
-        <section className="bg-white rounded-2xl border border-[#E2EEED] p-6 animate-slide-in delay-500">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="font-display font-700 text-[#1E3448]">Weekly Machine Usage</h2>
-              <p className="text-xs text-[#7A96A0] mt-0.5">Simulated IoT cycle data</p>
-            </div>
+        {/* My Bookings — full width */}
+        <section className="bg-white rounded-2xl border border-[#E2EEED] p-6 animate-slide-in delay-300">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="font-display font-700 text-[#1E3448]">My Bookings</h2>
+            <button className="text-xs font-medium text-[#0ABAB5] hover:underline">View all</button>
           </div>
-          <div className="flex items-end gap-3 h-32">
-            {[
-              { day: 'Mon', v: 68 }, { day: 'Tue', v: 82 }, { day: 'Wed', v: 45 },
-              { day: 'Thu', v: 91 }, { day: 'Fri', v: 76 }, { day: 'Sat', v: 55 }, { day: 'Sun', v: 38 },
-            ].map(({ day, v }, i) => (
-              <div key={day} className="flex-1 flex flex-col items-center gap-2">
-                <span className="text-xs text-[#7A96A0]">{v}%</span>
-                <div className="w-full rounded-t-lg overflow-hidden" style={{ height: `${v}%` }}>
-                  <div className="w-full h-full rounded-t-lg"
-                    style={{ background: v > 80 ? 'linear-gradient(to top,#0ABAB5,#22C55E)' : 'linear-gradient(to top,#0ABAB5,#5CD8D4)' }}/>
+          <div className="space-y-3">
+            {bookings.length === 0 ? (
+              <p className="text-sm text-[#7A96A0] text-center py-4">No bookings yet. Book a machine!</p>
+            ) : bookings.map(b => (
+              <div key={b.id} className="flex items-center gap-4 p-3 rounded-xl bg-[#F0F7F7] hover:bg-[#E0FAF9] transition-colors">
+                <div className="w-9 h-9 rounded-xl bg-white border border-[#E2EEED] flex items-center justify-center text-[#0ABAB5]">
+                  <DrumIcon size={20} phase={CYCLE_PHASES[0]} isRunning={b.status === 'active'}/>
                 </div>
-                <span className="text-xs font-medium text-[#7A96A0]">{day}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-[#1E3448] truncate">{b.machine}</p>
+                  <p className="text-xs text-[#7A96A0]">{b.date} · {b.duration}</p>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${bookingStyles[b.status] || 'bg-gray-50 text-gray-700'}`}>
+                    {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
+                  </span>
+                  <span className="text-xs text-[#7A96A0]">{b.id}</span>
+                  {b.status === 'upcoming' && (
+                    <button
+                      onClick={() => startMachine(b.booking_id)}
+                      className="mt-1 text-xs bg-[#0ABAB5] text-white px-2 py-0.5 rounded"
+                    >
+                      Start
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
