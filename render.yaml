@@ -1,0 +1,39 @@
+# Render Blueprint — persistent host for the Washly backend.
+# Use this when you want the live IoT simulation (in-memory setInterval) to keep
+# running, which Vercel's serverless functions can't do.
+#
+# Deploy: render.com → New → Blueprint → connect this repo. Render reads this file,
+# creates the service, then asks you to fill in the secret env vars (sync: false).
+services:
+  - type: web
+    name: washly-backend
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEMO_CYCLE_SECONDS
+        value: "120"
+      # Secrets — set these in the Render dashboard (never commit them):
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: SENDGRID_FROM_EMAIL
+        sync: false
+      # The deployed frontend URL, for CORS (e.g. https://washly.vercel.app)
+      - key: FRONTEND_URL
+        sync: false

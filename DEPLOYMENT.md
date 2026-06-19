@@ -86,9 +86,52 @@ The "Start Machine" demo drives the cycle with an in-memory `setInterval`. Serve
 functions are short-lived, so that timer **won't keep running on Vercel** — the API,
 bookings, AI, and dashboards all work, but the live progress updates will not advance.
 
-For the **live IoT demo**, run the backend on a persistent Node host
-(`npm start` locally, or Render/Railway/Fly), which keeps the timer alive. Point the
-frontend's `VITE_API_URL` at that host for the demo.
+For the **live IoT demo**, run the backend on a persistent Node host (next section).
+
+---
+
+## 3b. Backend on Render — recommended for the live IoT demo
+
+Render keeps a normal Node server running, so the `setInterval` cycle works. A
+blueprint is included at [`render.yaml`](render.yaml).
+
+**One-click (Blueprint):**
+1. [render.com](https://render.com) → **New → Blueprint** → connect this repo.
+2. Render reads `render.yaml` and creates the `washly-backend` web service.
+3. Fill in the secret env vars it prompts for (the `sync: false` ones below).
+4. Deploy → you get a URL like `https://washly-backend.onrender.com`.
+
+**Or manually:** New → **Web Service** → this repo, then:
+- Root Directory: `backend`
+- Build Command: `npm install`
+- Start Command: `npm start`
+- Health Check Path: `/api/health`
+- Instance Type: Free
+
+Environment variables (same as the backend table above):
+`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`,
+`GROQ_API_KEY`, `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `FRONTEND_URL`,
+`NODE_ENV=production`, and optionally `DEMO_CYCLE_SECONDS`.
+
+> Render injects its own `PORT` — `app.js` already reads `process.env.PORT`, so no
+> change needed.
+
+**Wire the frontend to it:** in the Vercel **frontend** project set
+`VITE_API_URL = https://washly-backend.onrender.com` and redeploy. (CORS already
+allows your `*.vercel.app` frontend.)
+
+> **Free-tier note:** Render free services sleep after ~15 min idle and take ~50s to
+> wake. Open the API URL once a minute or two before presenting to warm it up so the
+> live demo is instant.
+
+### Local fallback (no hosting)
+If you're presenting from your own laptop, just run the backend locally:
+```bash
+cd backend && npm install && npm start    # http://localhost:3000
+```
+and run the frontend locally too (`cd frontend && npm run dev`) with
+`VITE_API_URL=http://localhost:3000`. A **Vercel-hosted** frontend cannot reach your
+`localhost`, so for a public live demo use Render instead.
 
 ---
 
